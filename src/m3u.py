@@ -58,13 +58,14 @@ def extract_external_ids(track):
     Returns:
         dict: A dictionary of external IDs.
     """
+    provider_ids = track.get('ProviderIds', {})
     external_ids = {
-        'MusicBrainzTrackId': track.get('MusicBrainzTrackId', ''),
-        'MusicBrainzAlbumId': track.get('MusicBrainzAlbumId', ''),
-        'MusicBrainzArtistId': track.get('MusicBrainzArtistId', ''),
-        'MusicBrainzReleaseGroupId': track.get('MusicBrainzReleaseGroupId', ''),
-        'TheAudioDbAlbumId': track.get('TheAudioDbAlbumId', ''),
-        'TheAudioDbArtistId': track.get('TheAudioDbArtistId', '')
+        'MusicBrainzTrackId': provider_ids.get('MusicBrainzTrack', ''),
+        'MusicBrainzAlbumId': provider_ids.get('MusicBrainzAlbum', ''),
+        'MusicBrainzArtistId': provider_ids.get('MusicBrainzArtist', ''),
+        'MusicBrainzReleaseGroupId': provider_ids.get('MusicBrainzReleaseGroup', ''),
+        'TheAudioDbAlbumId': provider_ids.get('TheAudioDbAlbumId', ''),
+        'TheAudioDbArtistId': provider_ids.get('TheAudioDbArtistId', '')
     }
     return external_ids
 
