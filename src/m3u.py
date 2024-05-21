@@ -31,6 +31,8 @@ import shutil
 import json
 from tqdm import tqdm
 from collections import defaultdict, Counter
+from dateutil.parser import parse
+from datetime import datetime
 
 
 def get_emby_data(endpoint):
@@ -107,7 +109,7 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
 
     for track in tracks:
         path = track.get('Path', '')
-        if path not in existing_tracks:
+        if path and path not in existing_tracks:
             new_tracks.append(track)
 
     if not new_tracks:
@@ -187,6 +189,21 @@ def normalize_filename(name):
     name = re.sub(r'\s+', '_', name)  # Replace spaces with underscores
     return name
 
+def safe_date_parse(date_str, default):
+    """Safely parse a date string (ISO 8601 format). Return a default value if parsing fails.
+
+    Args:
+        date_str (str): The date string to parse.
+        default (datetime): The default value to return if parsing fails.
+
+    Returns:
+        datetime: The parsed date or the default value if parsing fails.
+    """
+    try:
+        return parse(date_str)
+    except (ValueError, TypeError):
+        return default
+
 def generate_playlists():
     """Main function to generate m3u playlists for genres, artists, and albums."""
     destination = os.getenv('M3U_DESTINATION')
@@ -207,7 +224,7 @@ def generate_playlists():
     # Get all audio items with basic metadata
     all_audio_items = get_emby_data(
         '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
-        'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,ExternalIds,MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
+        'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
     )
     
     genres = defaultdict(list)
@@ -224,45 +241,47 @@ def generate_playlists():
         track_genres = track.get('Genres', [])
         if not track_genres:
             continue  # Skip tracks with no genre information
-            
+        
         # Add track to genre playlists
         for genre in track_genres:
             genres[genre].append(track)
 
         # Add track to artist playlists, use artist ID or album artist as a fallback
-        artist_id = track.get('MusicBrainzArtistId', track.get('AlbumArtist'))
+        artist_id = track.get('MusicBrainzArtistId') or track.get('AlbumArtistId') or track.get('AlbumArtist')
         artist_name = track.get('AlbumArtist', 'Unknown Artist')
-        production_year = track.get('ProductionYear', '')
         if artist_id:
-            artist_key = (artist_id, artist_name, production_year)
+            artist_key = (artist_id, artist_name)
             artists[artist_key].append(track)
             artist_counter[artist_name] += 1
 
         # Add track to album playlists, use album ID or album name as a fallback
-        album_id = track.get('MusicBrainzAlbumId', track.get('Album'))
+        album_id = track.get('MusicBrainzAlbumId') or track.get('AlbumId') or track.get('Album')
         album_name = track.get('Album', 'Unknown Album')
         if album_id:
-            album_key = (album_id, album_name, production_year)
+            album_key = (album_id, album_name)
             albums[album_key].append(track)
             album_counter[album_name] += 1
 
-    # Disambiguate artist names
+    # Disambiguate artist names only if they have the same name
     disambiguated_artists = {}
-    for (artist_id, artist_name, production_year), tracks in artists.items():
+    for (artist_id, artist_name), tracks in artists.items():
         if artist_counter[artist_name] > 1:
-            disambiguated_artist = f"{artist_name} ({production_year})" if production_year else artist_name
+            disambiguated_artist = f"{artist_name} ({artist_id})"
         else:
             disambiguated_artist = artist_name
         disambiguated_artists.setdefault(disambiguated_artist, []).extend(tracks)
 
-    # Disambiguate album names
+    # Disambiguate album names only if they have the same name
     disambiguated_albums = {}
-    for (album_id, album_name, production_year), tracks in albums.items():
+    for (album_id, album_name), tracks in albums.items():
         if album_counter[album_name] > 1:
-            disambiguated_album = f"{album_name} ({production_year})" if production_year else album_name
+            disambiguated_album = f"{album_name} ({album_id})"
         else:
             disambiguated_album = album_name
         disambiguated_albums.setdefault(disambiguated_album, []).extend(tracks)
+
+    # Default date for unmatched PremiereDate or ProductionYear
+    default_date = datetime.min
 
     # Write genre playlists
     for genre, tracks in tqdm(genres.items(), desc="Writing genre playlists"):
@@ -271,8 +290,15 @@ def generate_playlists():
 
     # Write artist playlists
     for disambiguated_artist, tracks in tqdm(disambiguated_artists.items(), desc="Writing artist playlists"):
-        artist_filename = os.path.join(artist_dir, f'{normalize_filename(disambiguated_artist)}.m3u')
-        write_m3u_playlist(artist_filename, tracks, artist=disambiguated_artist)
+        if tracks:
+            # Sort tracks by release date, then by disc number and track number
+            tracks.sort(key=lambda x: (
+                safe_date_parse(x.get('PremiereDate', ''), default_date),
+                x.get('ParentIndexNumber', 0),
+                x.get('IndexNumber', 0)
+            ))
+            artist_filename = os.path.join(artist_dir, f'{normalize_filename(disambiguated_artist)}.m3u')
+            write_m3u_playlist(artist_filename, tracks, artist=disambiguated_artist)
 
     # Write album playlists
     for disambiguated_album, tracks in tqdm(disambiguated_albums.items(), desc="Writing album playlists"):
