@@ -69,6 +69,29 @@ def extract_external_ids(track):
     }
     return external_ids
 
+def read_existing_m3u(filename):
+    """Read an existing m3u file and return a set of its tracks.
+
+    Args:
+        filename (str): The full path to the m3u file.
+
+    Returns:
+        set: A set of track paths in the existing m3u file.
+    """
+    if not os.path.exists(filename):
+        return set()
+
+    with open(filename, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    tracks = set()
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('#'):
+            tracks.add(line)
+
+    return tracks
+
 def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
     """Write m3u playlist file.
 
@@ -79,7 +102,18 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
         artist (str, optional): Artist to include in the extended attributes.
         album (str, optional): Album to include in the extended attributes.
     """
-    temp_file = tempfile.NamedTemporaryFile('w', delete=False)
+    existing_tracks = read_existing_m3u(filename)
+    new_tracks = []
+
+    for track in tracks:
+        path = track.get('Path', '')
+        if path not in existing_tracks:
+            new_tracks.append(track)
+
+    if not new_tracks:
+        return  # No new tracks to add
+
+    temp_file = tempfile.NamedTemporaryFile('w', delete=False, encoding='utf-8')
     try:
         with temp_file as f:
             f.write('#EXTM3U\n')
@@ -90,8 +124,13 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                 f.write(f'#EXTART:{artist}\n')
             if album:
                 f.write(f'#EXTALB:{album}\n')
-            
-            for track in tracks:
+        
+            # Re-write existing tracks
+            for track in existing_tracks:
+                f.write(f'{track}\n')
+
+            # Write new tracks
+            for track in new_tracks:
                 duration = track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
                 title = track.get('Name', 'Unknown Title')
                 path = track.get('Path', '')
@@ -107,7 +146,7 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                 mb_release_group_id = external_ids['MusicBrainzReleaseGroupId']
                 the_audio_db_album_id = external_ids['TheAudioDbAlbumId']
                 the_audio_db_artist_id = external_ids['TheAudioDbArtistId']
-
+                
                 # Write extended information
                 f.write(f'#EXTINF:{duration}, {title}\n')
                 if album:
@@ -178,14 +217,14 @@ def generate_playlists():
     album_counter = Counter()
 
     for track in tqdm(all_audio_items['Items'], desc="Processing tracks"):
-        
+
         # Pretty print the track for debugging
-        print(json.dumps(track, indent=2))
-        
+        # print(json.dumps(track, indent=2))
+
         track_genres = track.get('Genres', [])
         if not track_genres:
             continue  # Skip tracks with no genre information
-        
+            
         # Add track to genre playlists
         for genre in track_genres:
             genres[genre].append(track)
