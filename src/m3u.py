@@ -200,7 +200,7 @@ def safe_date_parse(date_str, default):
         datetime: The parsed date or the default value if parsing fails.
     """
     try:
-        return parse(date_str)
+        return parse(date_str).replace(tzinfo=None)
     except (ValueError, TypeError):
         return default
 
