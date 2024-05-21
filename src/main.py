@@ -9,18 +9,20 @@ Environment Variables:
 - EMBY_API_KEY: The API key to authenticate with Emby.
 - EMBY_SERVER_URL: The base URL of the Emby server. E.g., http://localhost:8096
 - M3U_DESTINATION: The directory where m3u files will be created.
+- M3U_CRON: Cron expression for running the script periodically (optional).
 
-Author: [Your Name]
-Date: [Date]
+Author: Troy Kelly
+Date: 22 May 2024
 
 Usage:
 Make sure to set the environment variables before running the script:
 $ export EMBY_API_KEY='YOUR_API_KEY'
 $ export EMBY_SERVER_URL='http://YOUR_EMBY_SERVER'
 $ export M3U_DESTINATION='/path/to/m3u/destination'
+$ export M3U_CRON='*/15 * * * *' # Optional cron expression
 
 Then run the script:
-$ python3 generate_m3u_playlists.py
+$ python3 main.py
 """
 
 import os
@@ -28,12 +30,18 @@ import re
 import requests
 import tempfile
 import shutil
-import json
-from tqdm import tqdm
-from collections import defaultdict, Counter
-from dateutil.parser import parse
+import schedule
+import time
+import logging
 from datetime import datetime
+from dateutil.parser import parse
+from collections import defaultdict, Counter
+from tqdm import tqdm
+from croniter import croniter
 
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def get_emby_data(endpoint):
     """Retrieve data from given Emby API endpoint.
@@ -210,6 +218,8 @@ def generate_playlists():
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
     
+    logger.info("Generating playlists")
+
     # Ensure base destination directory exists
     os.makedirs(destination, exist_ok=True)
     
@@ -308,5 +318,40 @@ def generate_playlists():
             album_filename = os.path.join(album_dir, f'{normalize_filename(disambiguated_album)}.m3u')
             write_m3u_playlist(album_filename, tracks, album=disambiguated_album)
 
+
+def cron_schedule(cron_expression):
+    """Schedule the job based on the cron expression.
+
+    Args:
+        cron_expression (str): The cron expression for scheduling.
+    """
+    logger.info(f"Scheduling job with cron expression: {cron_expression}")
+
+    while True:
+        now = datetime.now()
+        iter = croniter(cron_expression, now)
+        next_run = iter.get_next(datetime)
+        delay = (next_run - now).total_seconds()
+
+        logger.info(f"Next run scheduled at {next_run} (in {delay} seconds)")
+        time.sleep(delay)
+
+        logger.info("Running scheduled job")
+        generate_playlists()
+        logger.info("Job execution completed")
+
+
 if __name__ == "__main__":
-    generate_playlists()
+    cron_expression = os.getenv('M3U_CRON')
+
+    if cron_expression:
+        try:
+            # Validate cron expression
+            croniter(cron_expression)
+            logging.info(f"Cron expression is valid.")
+            cron_schedule(cron_expression)
+        except (ValueError, TypeError):
+            logging.error(f"Invalid cron expression: {cron_expression}")
+            exit(1)
+    else:
+        generate_playlists()
