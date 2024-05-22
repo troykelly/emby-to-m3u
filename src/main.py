@@ -248,17 +248,53 @@ def generate_year_playlists(tracks, destination):
             sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
             write_m3u_playlist(genre_year_filename, sorted_tracks, genre=genre)
 
+def generate_decade_playlists(tracks, destination):
+    """Generate playlists based on the decade and genre within that decade.
+
+    Args:
+        tracks (list): List of track dictionaries.
+        destination (str): The base directory to save the playlists.
+    """
+    decade_dir = os.path.join(destination, '_decade')
+    os.makedirs(decade_dir, exist_ok=True)
+
+    decade_genre_dir = os.path.join(destination, '_genre')
+    os.makedirs(decade_genre_dir, exist_ok=True)
+
+    tracks_by_decade = defaultdict(list)
+    tracks_by_decade_genre = defaultdict(lambda: defaultdict(list))
+
+    for track in tqdm(tracks, desc="Categorising tracks by decade and genre"):
+        release_date = safe_date_parse(track.get('PremiereDate', '') or track.get('ProductionYear', ''), datetime.min)
+        if release_date.year == datetime.min.year:
+            continue
+        decade = (release_date.year // 10) * 10
+        tracks_by_decade[decade].append(track)
+        for genre in track.get('Genres', []):
+            tracks_by_decade_genre[decade][genre].append(track)
+
+    for decade, tracks in tqdm(tracks_by_decade.items(), desc="Writing decade playlists"):
+        decade_filename = os.path.join(decade_dir, f'{decade}s.m3u')
+        sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
+        write_m3u_playlist(decade_filename, sorted_tracks)
+
+    for decade, genres in tqdm(tracks_by_decade_genre.items(), desc="Writing decade-genre playlists"):
+        for genre, tracks in genres.items():
+            genre_decade_filename = os.path.join(decade_genre_dir, f'{normalize_filename(genre)}_{decade}s.m3u')
+            sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
+            write_m3u_playlist(genre_decade_filename, sorted_tracks, genre=genre)
+
 def generate_playlists():
     """Main function to generate m3u playlists for genres, artists, albums, and years."""
     destination = os.getenv('M3U_DESTINATION')
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
-    
+
     logger.info("Generating playlists")
 
     # Ensure base destination directory exists
     os.makedirs(destination, exist_ok=True)
-    
+
     # Ensure subdirectories exist
     genre_dir = os.path.join(destination, '_genre')
     artist_dir = os.path.join(destination, '_artist')
@@ -272,7 +308,7 @@ def generate_playlists():
         '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
         'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
     )
-    
+
     genres = defaultdict(list)
     artists = defaultdict(list)
     albums = defaultdict(list)
@@ -281,13 +317,10 @@ def generate_playlists():
 
     for track in tqdm(all_audio_items['Items'], desc="Processing tracks"):
 
-        # Pretty print the track for debugging
-        # print(json.dumps(track, indent=2))
-
         track_genres = track.get('Genres', [])
         if not track_genres:
             continue  # Skip tracks with no genre information
-        
+
         # Add track to genre playlists
         for genre in track_genres:
             genres[genre].append(track)
@@ -353,9 +386,12 @@ def generate_playlists():
             tracks.sort(key=lambda x: x.get('IndexNumber', 0))
             album_filename = os.path.join(album_dir, f'{normalize_filename(disambiguated_album)}.m3u')
             write_m3u_playlist(album_filename, tracks, album=disambiguated_album)
-    
+
     # Generate and write year-based playlists
     generate_year_playlists(all_audio_items['Items'], destination)
+
+    # Generate and write decade-based playlists
+    generate_decade_playlists(all_audio_items['Items'], destination)
 
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
