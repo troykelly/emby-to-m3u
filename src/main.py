@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Script to generate m3u playlists from Emby API based on music genres, artists, and albums.
+Script to generate m3u playlists from Emby API based on music genres, artists, albums, and years.
 
 This script connects to the Emby API, retrieves all music tracks,
-and generates m3u playlist files for each genre, artist, and album.
+and generates m3u playlist files for each genre, artist, album, and year.
 
 Environment Variables:
 - EMBY_API_KEY: The API key to authenticate with Emby.
@@ -146,7 +146,7 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                 path = track.get('Path', '')
                 album = track.get('Album', '')
                 album_artist = track.get('AlbumArtist', '')
-                genre_name = track.get('Genres', [''])[0]
+                genre_name = track.get('Genres', [''])[0] if track.get('Genres') else ''
 
                 # Extract external IDs during playlist writing
                 external_ids = extract_external_ids(track)
@@ -212,8 +212,44 @@ def safe_date_parse(date_str, default):
     except (ValueError, TypeError):
         return default
 
+def generate_year_playlists(tracks, destination):
+    """Generate playlists based on the year and genre within that year.
+
+    Args:
+        tracks (list): List of track dictionaries.
+        destination (str): The base directory to save the playlists.
+    """
+    year_dir = os.path.join(destination, '_year')
+    os.makedirs(year_dir, exist_ok=True)
+
+    year_genre_dir = os.path.join(destination, '_genre')
+    os.makedirs(year_genre_dir, exist_ok=True)
+
+    tracks_by_year = defaultdict(list)
+    tracks_by_year_genre = defaultdict(lambda: defaultdict(list))
+
+    for track in tqdm(tracks, desc="Categorising tracks by year and genre"):
+        release_date = safe_date_parse(track.get('PremiereDate', '') or track.get('ProductionYear', ''), datetime.min)
+        if release_date.year == datetime.min.year:
+            continue
+        year = release_date.year
+        tracks_by_year[year].append(track)
+        for genre in track.get('Genres', []):
+            tracks_by_year_genre[year][genre].append(track)
+
+    for year, tracks in tqdm(tracks_by_year.items(), desc="Writing year playlists"):
+        year_filename = os.path.join(year_dir, f'{year}.m3u')
+        sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
+        write_m3u_playlist(year_filename, sorted_tracks)
+
+    for year, genres in tqdm(tracks_by_year_genre.items(), desc="Writing year-genre playlists"):
+        for genre, tracks in genres.items():
+            genre_year_filename = os.path.join(year_genre_dir, f'{normalize_filename(genre)}_{year}.m3u')
+            sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
+            write_m3u_playlist(genre_year_filename, sorted_tracks, genre=genre)
+
 def generate_playlists():
-    """Main function to generate m3u playlists for genres, artists, and albums."""
+    """Main function to generate m3u playlists for genres, artists, albums, and years."""
     destination = os.getenv('M3U_DESTINATION')
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
@@ -317,7 +353,9 @@ def generate_playlists():
             tracks.sort(key=lambda x: x.get('IndexNumber', 0))
             album_filename = os.path.join(album_dir, f'{normalize_filename(disambiguated_album)}.m3u')
             write_m3u_playlist(album_filename, tracks, album=disambiguated_album)
-
+    
+    # Generate and write year-based playlists
+    generate_year_playlists(all_audio_items['Items'], destination)
 
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
