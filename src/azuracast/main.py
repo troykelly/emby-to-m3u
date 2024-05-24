@@ -1,6 +1,8 @@
 import os
 import requests
 import logging
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 from base64 import b64encode
 
 logging.basicConfig(level=logging.INFO)
@@ -14,6 +16,13 @@ class AzuraCastSync:
         self.host = os.getenv('AZURACAST_HOST')
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
+
+        # Initialize a session for connection reuse and reliability
+        self.session = requests.Session()
+        retries = Retry(total=5, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
         """Performs an HTTP request.
@@ -34,9 +43,14 @@ class AzuraCastSync:
         url = f"{self.host}/api{endpoint}"
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
-        response = requests.request(method, url, headers=headers, data=data, json=json)
-        response.raise_for_status()
-        return response.json()
+
+        try:
+            response = self.session.request(method, url, headers=headers, data=data, json=json, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Request to {url} failed: {e}")
+            raise
 
     def get_known_tracks(self):
         """Retrieves a list of all known tracks in Azuracast.
@@ -92,5 +106,10 @@ class AzuraCastSync:
         headers = {"Content-Type": "application/json"}
         json_body = {"CustomFields": [{"Name": "AzuraCastID", "Value": azuracast_id}]}
 
-        response = requests.post(endpoint, headers=headers, json=json_body)
-        return response.status_code == 204
+        try:
+            response = self.session.post(endpoint, headers=headers, json=json_body, timeout=10)
+            response.raise_for_status()
+            return response.status_code == 204
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Failed to link Azuracast ID to Emby: {e}")
+            return False
