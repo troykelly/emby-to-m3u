@@ -367,12 +367,6 @@ def generate_playlists():
 
             # Upload the track to Azuracast
             azuracast_id = azuracast_sync.upload_file_to_azuracast(file_content, azuracast_file_path)
-        
-            # Optionally, link Azuracast ID back to Emby
-            emby_api_key = os.getenv('EMBY_API_KEY')
-            emby_server_url = os.getenv('EMBY_SERVER_URL')
-            emby_track_id = track['Id']
-            azuracast_sync.link_azuracast_id_to_emby(emby_api_key, emby_server_url, emby_track_id, azuracast_id)
 
         track_genres = track.get('Genres', [])
         if not track_genres:

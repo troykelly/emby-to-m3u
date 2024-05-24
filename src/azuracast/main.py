@@ -89,34 +89,3 @@ class AzuraCastSync:
         data = {"path": file_key, "file": b64_content}
         response = self._perform_request("POST", endpoint, json=data)
         return response.get("id")
-
-    def link_azuracast_id_to_emby(self, emby_api_key, emby_server_url, emby_track_id, azuracast_id):
-        """Links Azuracast ID back to Emby by adding a custom field to the track.
-
-        Args:
-            emby_api_key (str): API key for Emby.
-            emby_server_url (str): Base URL of the Emby server.
-            emby_track_id (str): ID of the track in Emby.
-            azuracast_id (str): ID of the track in Azuracast.
-
-        Returns:
-            bool: True if the custom field was successfully added, False otherwise.
-        """
-        endpoint = f"{emby_server_url}/Items/{emby_track_id}?api_key={emby_api_key}"
-        headers = {"Content-Type": "application/json"}
-        json_body = {
-            "CustomFields": [
-                {
-                    "Name": "AzuraCastID",
-                    "Value": azuracast_id
-                }
-            ]
-        }
-
-        try:
-            response = self.session.post(endpoint, headers=headers, json=json_body, timeout=10)
-            response.raise_for_status()
-            return True
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to link Azuracast ID to Emby: {e}")
-            return False
