@@ -3,7 +3,8 @@ import requests
 import logging
 from base64 import b64encode
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -17,15 +18,22 @@ class AzuraCastSync:
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
 
-        # Initialize a session for connection reuse and reliability
-        self.session = requests.Session()
-        retries = Retry(total=5, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504])
+    def _get_session(self):
+        """Creates a new session with retry strategy."""
+        session = requests.Session()
+        retries = Retry(
+            total=5, 
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            method_whitelist=["HEAD", "GET", "OPTIONS", "POST"]
+        )
         adapter = HTTPAdapter(max_retries=retries)
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        return session
 
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
-        """Performs an HTTP request.
+        """Performs an HTTP request with a new session for each request to avoid connection issues.
 
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
@@ -38,19 +46,33 @@ class AzuraCastSync:
             dict: JSON response.
 
         Raises:
-            requests.exceptions.HTTPError: If the HTTP request returned an unsuccessful status code.
+            requests.exceptions.RequestException: If the HTTP request encounters an error.
         """
         url = f"{self.host}/api{endpoint}"
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
 
-        try:
-            response = self.session.request(method, url, headers=headers, data=data, json=json, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Request to {url} failed: {e}")
-            raise
+        with self._get_session() as session:
+            for attempt in range(6):
+                try:
+                    response = session.request(method, url, headers=headers, data=data, json=json, timeout=10)
+                    response.raise_for_status()
+
+                    if response.status_code == 413:
+                        logging.warning(f"Request to {url} failed due to size limit. Attempt {attempt + 1}. Retrying...")
+                        time.sleep(2 ** attempt)
+                        continue  # Retry on 413 error
+
+                    return response.json()
+                except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+                    logging.warning(f"Request to {url} attempt {attempt + 1} failed: {e}. Retrying...")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                except requests.exceptions.RequestException as e:
+                    logging.error(f"Request to {url} failed: {e} - Response: {response.text if 'response' in locals() else 'No response'}")
+                    raise
+
+        logging.error(f"Request to {url} failed after {6} attempts")
+        raise requests.exceptions.RequestException(f"Failed after {6} attempts")
 
     def get_known_tracks(self):
         """Retrieves a list of all known tracks in Azuracast.
@@ -59,8 +81,7 @@ class AzuraCastSync:
             list: List of file paths known to Azuracast.
         """
         endpoint = f"/station/{self.station_id}/files/list"
-        response = self._perform_request("GET", endpoint)
-        return [file_info["path"] for file_info in response]
+        return self._perform_request("GET", endpoint)
 
     def check_file_in_azuracast(self, known_tracks, file_path):
         """Checks if a file is in the list of known tracks.
@@ -87,5 +108,8 @@ class AzuraCastSync:
         endpoint = f"/station/{self.station_id}/files"
         b64_content = b64encode(file_content).decode("utf-8")
         data = {"path": file_key, "file": b64_content}
-        response = self._perform_request("POST", endpoint, json=data)
-        return response.get("id")
+
+        # Introduce a delay to avoid rate limiting issues
+        time.sleep(1)
+
+        return self._perform_request("POST", endpoint, json=data)
