@@ -38,6 +38,7 @@ from dateutil.parser import parse
 from collections import defaultdict, Counter
 from tqdm import tqdm
 from croniter import croniter
+from azuracast.main import AzuraCastSync
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -58,6 +59,26 @@ def get_emby_data(endpoint):
     response = requests.get(url)
     response.raise_for_status()
     return response.json()
+
+def get_emby_file_content(track):
+    """Fetches the binary content of a track file from Emby.
+
+    Args:
+        track (dict): The track object with its detailed metadata.
+
+    Returns:
+        bytes: The binary content of the track's file.
+    """
+    emby_server_url = os.getenv('EMBY_SERVER_URL')
+    emby_api_key = os.getenv('EMBY_API_KEY')
+
+    file_id = track['Id']
+    download_url = f"{emby_server_url}/Items/{file_id}/File?api_key={emby_api_key}"
+
+    response = requests.get(download_url, stream=True)
+    response.raise_for_status()
+
+    return response.content
 
 def extract_external_ids(track):
     """Extract external IDs from a track object.
@@ -290,6 +311,12 @@ def generate_playlists():
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
 
+    # Initialize AzuraCastSync
+    azuracast_sync = AzuraCastSync()
+
+    # Get the list of known tracks from Azuracast
+    known_tracks = azuracast_sync.get_known_tracks()
+    
     logger.info("Generating playlists")
 
     # Ensure base destination directory exists
@@ -316,6 +343,36 @@ def generate_playlists():
     album_counter = Counter()
 
     for track in tqdm(all_audio_items['Items'], desc="Processing tracks"):
+
+        artist_name = track.get('AlbumArtist', 'Unknown Artist')
+        album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+
+        disk_number = track.get('ParentIndexNumber', 1)
+        track_number = track.get('IndexNumber', 1)
+        title = track.get('Name', 'Unknown Title')
+        
+        # Get the file extension from the path
+        file_path = track.get('Path')
+        file_extension = os.path.splitext(file_path)[1]
+
+        # Construct the file path as per the specification
+        azuracast_file_path = f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
+
+        # Check if the track already exists in Azuracast
+        if not azuracast_sync.check_file_in_azuracast(known_tracks, azuracast_file_path):
+            logger.info(f"Uploading {azuracast_file_path} to Azuracast")
+            
+            # Retrieve the actual file content
+            file_content = get_emby_file_content(track)
+
+            # Upload the track to Azuracast
+            azuracast_id = azuracast_sync.upload_file_to_azuracast(file_content, azuracast_file_path)
+        
+            # Optionally, link Azuracast ID back to Emby
+            emby_api_key = os.getenv('EMBY_API_KEY')
+            emby_server_url = os.getenv('EMBY_SERVER_URL')
+            emby_track_id = track['Id']
+            azuracast_sync.link_azuracast_id_to_emby(emby_api_key, emby_server_url, emby_track_id, azuracast_id)
 
         track_genres = track.get('Genres', [])
         if not track_genres:
