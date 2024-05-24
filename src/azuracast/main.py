@@ -1,9 +1,9 @@
 import os
 import requests
 import logging
+from base64 import b64encode
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from base64 import b64encode
 
 logging.basicConfig(level=logging.INFO)
 
@@ -102,14 +102,21 @@ class AzuraCastSync:
         Returns:
             bool: True if the custom field was successfully added, False otherwise.
         """
-        endpoint = f"{emby_server_url}/Items/{emby_track_id}/UserData?api_key={emby_api_key}"
+        endpoint = f"{emby_server_url}/Items/{emby_track_id}?api_key={emby_api_key}"
         headers = {"Content-Type": "application/json"}
-        json_body = {"CustomFields": [{"Name": "AzuraCastID", "Value": azuracast_id}]}
+        json_body = {
+            "CustomFields": [
+                {
+                    "Name": "AzuraCastID",
+                    "Value": azuracast_id
+                }
+            ]
+        }
 
         try:
             response = self.session.post(endpoint, headers=headers, json=json_body, timeout=10)
             response.raise_for_status()
-            return response.status_code == 204
+            return True
         except requests.exceptions.RequestException as e:
             logging.error(f"Failed to link Azuracast ID to Emby: {e}")
             return False
