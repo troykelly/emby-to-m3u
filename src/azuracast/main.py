@@ -6,16 +6,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import time
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-def sizeof_fmt(num, suffix='B'):
-    """Convert file size to a readable format."""
-    for unit in ['','K','M','G','T','P','E','Z']:
-        if abs(num) < 1024.0:
-            return f"{num:3.1f}{unit}{suffix}"
-        num /= 1024.0
-    return f"{num:.1f}Y{suffix}"
 
 class AzuraCastSync:
     """Client for interacting with the AzuraCast API for syncing playlists."""
@@ -25,16 +17,12 @@ class AzuraCastSync:
         self.host = os.getenv('AZURACAST_HOST')
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
-        self._session = None
 
-    def _init_session(self):
-        """Initializes the session with retry strategy."""
-        if self._session is not None:
-            self._close_session()
-
+    def _get_session(self):
+        """Creates a new session with retry strategy."""
         session = requests.Session()
         retries = Retry(
-            total=5, 
+            total=1,  # Retry strategy within a single request
             backoff_factor=1,
             status_forcelist=[500, 502, 503, 504],
             allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
@@ -42,14 +30,8 @@ class AzuraCastSync:
         adapter = HTTPAdapter(max_retries=retries)
         session.mount('http://', adapter)
         session.mount('https://', adapter)
-        self._session = session
+        return session
 
-    def _close_session(self):
-        """Closes the current session."""
-        if self._session:
-            self._session.close()
-            self._session = None
-            
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
         """Performs an HTTP request with connection handling and retry logic.
 
@@ -70,34 +52,39 @@ class AzuraCastSync:
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
 
-        attempt = 0
-        self._init_session()
-        
-        while attempt < 6:  # Retry up to 6 times
+        MAX_ATTEMPTS = 6
+
+        for attempt in range(1, MAX_ATTEMPTS + 1):  # Retry up to 6 times
+            session = None
             try:
-                logger.debug(f"Attempt {attempt + 1}: Making request to {url}")
-                response = self._session.request(method, url, headers=headers, data=data, json=json, timeout=10)
+                session = self._get_session()
+                logger.debug(f"Attempt {attempt}: Making request to {url}")
+                response = session.request(method, url, headers=headers, data=data, json=json, timeout=10)
                 response.raise_for_status()
 
                 if response.status_code == 413:
-                    logger.warning(f"Request to {url} failed due to size limit on attempt {attempt + 1}. Retrying...")
+                    logger.warning(f"Attempt {attempt}: Request to {url} failed due to size limit. Retrying...")
                     time.sleep(2 ** attempt)
                     continue  # Retry on 413 error
 
                 return response.json()
 
             except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
-                logger.warning(f"Attempt {attempt + 1}: Request to {url} failed: {e}. Retrying...")
+                logger.warning(f"Attempt {attempt}: Request to {url} failed: {e}. Retrying...")
                 time.sleep(2 ** attempt)  # Exponential backoff
-                self._init_session()  # Close and reinitialize session
-                attempt += 1
 
             except requests.exceptions.RequestException as e:
-                logger.error(f"Attempt {attempt + 1}: Request to {url} failed: {e} - Response: {response.text if 'response' in locals() else 'No response'}")
-                raise
+                # Add proper response handling
+                response_text = response.text if response is not None else "No response"
+                logger.error(f"Attempt {attempt}: Request to {url} failed: {e} - Response: {response_text}")
+                raise e  # Exit on non-retriable exceptions
+
+            finally:
+                if session:
+                    session.close()  # Ensure session is closed after each attempt
         
-        logger.error(f"Request to {url} failed after {attempt} attempts")
-        raise requests.exceptions.RequestException(f"Failed after {attempt} attempts")
+        logger.error(f"Request to {url} failed after {MAX_ATTEMPTS} attempts")
+        raise requests.exceptions.RequestException(f"Failed after {MAX_ATTEMPTS} attempts")
 
     def get_known_tracks(self):
         """Retrieves a list of all known tracks in Azuracast.
@@ -136,9 +123,17 @@ class AzuraCastSync:
 
         # Log file size in a readable format
         file_size = sizeof_fmt(len(file_content))
-        logger.debug(f"Uploading file: {file_key}, Size: {file_size}")
+        logger.info(f"Uploading file: {file_key}, Size: {file_size}")
 
         # Introduce a delay to avoid rate limiting issues
         time.sleep(1)
 
         return self._perform_request("POST", endpoint, json=data)
+
+def sizeof_fmt(num, suffix='B'):
+    """Convert file size to a readable format."""
+    for unit in ['','K','M','G','T','P','E','Z']:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Y{suffix}"
