@@ -7,7 +7,15 @@ from urllib3.util.retry import Retry
 import time
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+def sizeof_fmt(num, suffix='B'):
+    """Convert file size to a readable format."""
+    for unit in ['','K','M','G','T','P','E','Z']:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Y{suffix}"
 
 class AzuraCastSync:
     """Client for interacting with the AzuraCast API for syncing playlists."""
@@ -25,7 +33,7 @@ class AzuraCastSync:
             total=5, 
             backoff_factor=1,
             status_forcelist=[500, 502, 503, 504],
-            method_whitelist=["HEAD", "GET", "OPTIONS", "POST"]
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
         )
         adapter = HTTPAdapter(max_retries=retries)
         session.mount('http://', adapter)
@@ -108,6 +116,10 @@ class AzuraCastSync:
         endpoint = f"/station/{self.station_id}/files"
         b64_content = b64encode(file_content).decode("utf-8")
         data = {"path": file_key, "file": b64_content}
+
+        # Log file size in a readable format
+        file_size = sizeof_fmt(len(file_content))
+        logger.debug(f"Uploading file: {file_key}, Size: {file_size}")
 
         # Introduce a delay to avoid rate limiting issues
         time.sleep(1)

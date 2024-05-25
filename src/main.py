@@ -305,6 +305,14 @@ def generate_decade_playlists(tracks, destination):
             sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
             write_m3u_playlist(genre_decade_filename, sorted_tracks, genre=genre)
 
+def sizeof_fmt(num, suffix='B'):
+    """Convert file size to a readable format."""
+    for unit in ['','K','M','G','T','P','E','Z']:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Y{suffix}"
+
 def sync_tracks_in_batches(tracks_to_sync, batch_size=1):
     """Sync tracks to Azuracast in batches.
        
@@ -322,18 +330,20 @@ def sync_tracks_in_batches(tracks_to_sync, batch_size=1):
 
             with tqdm(total=len(batch), desc=f"Batch {i // batch_size + 1}", unit="file") as file_prog:
                 for track, azuracast_file_path in batch:
-                    logger.info(f"Uploading {azuracast_file_path} to Azuracast")
                     try:
                         file_content = get_emby_file_content(track)
+                        
+                        # Log file size in a readable format before uploading
+                        file_size = sizeof_fmt(len(file_content))
+                        logger.debug(f"Uploading file: {azuracast_file_path}, Size: {file_size}")
+                        
                         azuracast_sync.upload_file_to_azuracast(file_content, azuracast_file_path)
                         file_prog.update(1)  # Update progress for each file
                     except Exception as e:
-                        logger.error(f"Failed to upload {azuracast_file_path} to Azuracast: {e}")
+                        logger.error(f"Failed to upload {file_size} {azuracast_file_path} to Azuracast: {e}")
                         # Continue to next file in case of failure
 
             batch_prog.update(1)  # Update progress for each batch
-
-
 
 def generate_playlists():
     """Main function to generate m3u playlists for genres, artists, albums, and years."""
