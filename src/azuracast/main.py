@@ -25,9 +25,13 @@ class AzuraCastSync:
         self.host = os.getenv('AZURACAST_HOST')
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
+        self._session = None
 
-    def _get_session(self):
-        """Creates a new session with retry strategy."""
+    def _init_session(self):
+        """Initializes the session with retry strategy."""
+        if self._session is not None:
+            self._close_session()
+
         session = requests.Session()
         retries = Retry(
             total=5, 
@@ -38,10 +42,16 @@ class AzuraCastSync:
         adapter = HTTPAdapter(max_retries=retries)
         session.mount('http://', adapter)
         session.mount('https://', adapter)
-        return session
+        self._session = session
 
+    def _close_session(self):
+        """Closes the current session."""
+        if self._session:
+            self._session.close()
+            self._session = None
+            
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
-        """Performs an HTTP request with a new session for each request to avoid connection issues.
+        """Performs an HTTP request with connection handling and retry logic.
 
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
@@ -60,27 +70,34 @@ class AzuraCastSync:
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
 
-        with self._get_session() as session:
-            for attempt in range(6):
-                try:
-                    response = session.request(method, url, headers=headers, data=data, json=json, timeout=10)
-                    response.raise_for_status()
+        attempt = 0
+        self._init_session()
+        
+        while attempt < 6:  # Retry up to 6 times
+            try:
+                logger.debug(f"Attempt {attempt + 1}: Making request to {url}")
+                response = self._session.request(method, url, headers=headers, data=data, json=json, timeout=10)
+                response.raise_for_status()
 
-                    if response.status_code == 413:
-                        logging.warning(f"Request to {url} failed due to size limit. Attempt {attempt + 1}. Retrying...")
-                        time.sleep(2 ** attempt)
-                        continue  # Retry on 413 error
+                if response.status_code == 413:
+                    logger.warning(f"Request to {url} failed due to size limit on attempt {attempt + 1}. Retrying...")
+                    time.sleep(2 ** attempt)
+                    continue  # Retry on 413 error
 
-                    return response.json()
-                except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
-                    logging.warning(f"Request to {url} attempt {attempt + 1} failed: {e}. Retrying...")
-                    time.sleep(2 ** attempt)  # Exponential backoff
-                except requests.exceptions.RequestException as e:
-                    logging.error(f"Request to {url} failed: {e} - Response: {response.text if 'response' in locals() else 'No response'}")
-                    raise
+                return response.json()
 
-        logging.error(f"Request to {url} failed after {6} attempts")
-        raise requests.exceptions.RequestException(f"Failed after {6} attempts")
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+                logger.warning(f"Attempt {attempt + 1}: Request to {url} failed: {e}. Retrying...")
+                time.sleep(2 ** attempt)  # Exponential backoff
+                self._init_session()  # Close and reinitialize session
+                attempt += 1
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Attempt {attempt + 1}: Request to {url} failed: {e} - Response: {response.text if 'response' in locals() else 'No response'}")
+                raise
+        
+        logger.error(f"Request to {url} failed after {attempt} attempts")
+        raise requests.exceptions.RequestException(f"Failed after {attempt} attempts")
 
     def get_known_tracks(self):
         """Retrieves a list of all known tracks in Azuracast.
