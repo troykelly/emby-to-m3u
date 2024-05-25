@@ -4,7 +4,7 @@ croniter==2.0.5
 gitdb==4.0.11
 GitPython==3.1.43
 idna==3.7
-python-crontab==3.0.0
+python-crontab==3.1.0
 python-dateutil==2.9.0.post0
 pytz==2024.1
 requests==2.32.2
