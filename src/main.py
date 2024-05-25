@@ -38,6 +38,7 @@ from dateutil.parser import parse
 from collections import defaultdict, Counter
 from tqdm import tqdm
 from croniter import croniter
+from azuracast.main import AzuraCastSync
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -58,6 +59,26 @@ def get_emby_data(endpoint):
     response = requests.get(url)
     response.raise_for_status()
     return response.json()
+
+def get_emby_file_content(track):
+    """Fetches the binary content of a track file from Emby.
+
+    Args:
+        track (dict): The track object with its detailed metadata.
+
+    Returns:
+        bytes: The binary content of the track's file.
+    """
+    emby_server_url = os.getenv('EMBY_SERVER_URL')
+    emby_api_key = os.getenv('EMBY_API_KEY')
+
+    file_id = track['Id']
+    download_url = f"{emby_server_url}/Items/{file_id}/File?api_key={emby_api_key}"
+
+    response = requests.get(download_url, stream=True)
+    response.raise_for_status()
+
+    return response.content
 
 def extract_external_ids(track):
     """Extract external IDs from a track object.
@@ -284,12 +305,58 @@ def generate_decade_playlists(tracks, destination):
             sorted_tracks = sorted(tracks, key=lambda x: safe_date_parse(x.get('PremiereDate', ''), datetime.min))
             write_m3u_playlist(genre_decade_filename, sorted_tracks, genre=genre)
 
+def sizeof_fmt(num, suffix='B'):
+    """Convert file size to a readable format."""
+    for unit in ['','K','M','G','T','P','E','Z']:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Y{suffix}"
+
+def sync_tracks_in_batches(tracks_to_sync, batch_size=1):
+    """Sync tracks to Azuracast in batches.
+       
+    Args:
+        tracks_to_sync (list): List of tracks to sync.
+        batch_size (int): Number of tracks to upload per batch.
+    """
+    azuracast_sync = AzuraCastSync()
+
+    total_batches = (len(tracks_to_sync) + batch_size - 1) // batch_size  # Calculate total number of batches
+
+    with tqdm(total=total_batches, desc="Uploading batches", unit="batch") as batch_prog:
+        for i in range(0, len(tracks_to_sync), batch_size):
+            batch = tracks_to_sync[i:i + batch_size]
+
+            with tqdm(total=len(batch), desc=f"Batch {i // batch_size + 1}", unit="file") as file_prog:
+                for track, azuracast_file_path in batch:
+                    try:
+                        file_content = get_emby_file_content(track)
+                        
+                        # Log file size in a readable format before uploading
+                        file_size = sizeof_fmt(len(file_content))
+                        logger.debug(f"Uploading file: {azuracast_file_path}, Size: {file_size}")
+                        
+                        azuracast_sync.upload_file_to_azuracast(file_content, azuracast_file_path)
+                        file_prog.update(1)  # Update progress for each file
+                    except Exception as e:
+                        logger.error(f"Failed to upload {file_size} {azuracast_file_path} to Azuracast: {e}")
+                        # Continue to next file in case of failure
+
+            batch_prog.update(1)  # Update progress for each batch
+
 def generate_playlists():
     """Main function to generate m3u playlists for genres, artists, albums, and years."""
     destination = os.getenv('M3U_DESTINATION')
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
 
+    # Initialize AzuraCastSync
+    azuracast_sync = AzuraCastSync()
+
+    # Get the list of known tracks from Azuracast
+    known_tracks = azuracast_sync.get_known_tracks()
+    
     logger.info("Generating playlists")
 
     # Ensure base destination directory exists
@@ -314,9 +381,27 @@ def generate_playlists():
     albums = defaultdict(list)
     artist_counter = Counter()
     album_counter = Counter()
+    tracks_to_sync = []
 
     for track in tqdm(all_audio_items['Items'], desc="Processing tracks"):
+        
+        artist_name = track.get('AlbumArtist', 'Unknown Artist')
+        album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
 
+        disk_number = track.get('ParentIndexNumber', 1)
+        track_number = track.get('IndexNumber', 1)
+        title = track.get('Name', 'Unknown Title')
+        
+        # Get the file extension from the path
+        file_path = track.get('Path')
+        file_extension = os.path.splitext(file_path)[1]
+
+        # Construct the file path as per the specification
+        azuracast_file_path = f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
+        
+        if not azuracast_sync.check_file_in_azuracast(known_tracks, azuracast_file_path):
+            tracks_to_sync.append((track, azuracast_file_path))
+        
         track_genres = track.get('Genres', [])
         if not track_genres:
             continue  # Skip tracks with no genre information
@@ -392,6 +477,10 @@ def generate_playlists():
 
     # Generate and write decade-based playlists
     generate_decade_playlists(all_audio_items['Items'], destination)
+    
+    # if env vars AZURACAST_HOST, AZURACAST_API_KEY and AZURACAST_STATIONID are set, sync tracks to Azuracast
+    if os.getenv('AZURACAST_HOST') and os.getenv('AZURACAST_API_KEY') and os.getenv('AZURACAST_STATIONID'):
+        sync_tracks_in_batches(tracks_to_sync, batch_size=5)
 
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
