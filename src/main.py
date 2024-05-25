@@ -606,9 +606,8 @@ def generate_playlists():
     manager.write_playlists(genre_dir, artist_dir, album_dir)
     generate_year_playlists(manager.tracks, destination)
     generate_decade_playlists(manager.tracks, destination)
-    # manager.sync_tracks()
-
     generate_radio_playlists(manager.tracks)  # Generate dynamic radio playlists after generating other playlists
+    manager.sync_tracks()
 
 if __name__ == "__main__":
     cron_expression = os.getenv('M3U_CRON')
