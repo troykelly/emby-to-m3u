@@ -243,10 +243,21 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
     existing_tracks = read_existing_m3u(filename)
     new_tracks = []
 
+    # Get the prefix to be stripped from the environment variable
+    strip_prefix = os.getenv('M3U_STRIP_PREFIX', '')
+
+    def strip_path_prefix(path):
+        """Strip the defined prefix from the path if it exists."""
+        if strip_prefix and path.startswith(strip_prefix):
+            return path[len(strip_prefix):]
+        return path
+
     for track in tracks:
         path = track.get('Path', '')
-        if path and path not in existing_tracks:
-            new_tracks.append(track)
+        if path:
+            path = strip_path_prefix(path)
+            if path not in existing_tracks:
+                new_tracks.append(track)
 
     if not new_tracks:
         return  # No new tracks to add
@@ -264,8 +275,9 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                 f.write(f'#EXTALB:{album}\n')
         
             # Re-write existing tracks
-            for track in existing_tracks:
-                f.write(f'{track}\n')
+            for track_path in existing_tracks:
+                track_path = strip_path_prefix(track_path)
+                f.write(f'{track_path}\n')
 
             # Write new tracks
             for track in new_tracks:
@@ -305,7 +317,9 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                     f.write(f'#EXT-X-THEAUDIODB-ALBUMID:{the_audio_db_album_id}\n')
                 if the_audio_db_artist_id:
                     f.write(f'#EXT-X-THEAUDIODB-ARTISTID:{the_audio_db_artist_id}\n')
-                f.write(f'{path}\n')
+                
+                # Write the final path without prefix
+                f.write(f'{strip_path_prefix(path)}\n')
         
         shutil.move(temp_file.name, filename)
     except Exception as e:
@@ -491,13 +505,14 @@ def ensure_directories_exist(destination):
     os.makedirs(album_dir, exist_ok=True)
     return genre_dir, artist_dir, album_dir
 
-def create_dynamic_radio_playlist(tracks, time_of_day, lastfm):
+def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, target_duration=28800):
     """Create dynamic radio playlists based on time of day using LastFM recommendations.
 
     Args:
         tracks (list): List of track dictionaries.
         time_of_day (str): Time of day ('morning', 'afternoon', 'evening').
         lastfm (LastFM): LastFM client for fetching recommendations.
+        target_duration (int, optional): Target duration for the playlist in seconds. Default is 28800 seconds (8 hours).
 
     Returns:
         list: List of selected tracks for the radio playlist.
@@ -511,31 +526,42 @@ def create_dynamic_radio_playlist(tracks, time_of_day, lastfm):
     selected_genres = seed_genres.get(time_of_day, [])
     selected_tracks = []
     seen_track_ids = set()
+    playlist_duration = 0
 
-    for genre in selected_genres:
-        genre_tracks = [track for track in tracks if genre in track.get('Genres', [])]
-        
-        if genre_tracks:
-            seed_track = random.choice(genre_tracks)  # Pick a random track from the genre
-            seed_artist = seed_track.get('AlbumArtist')
-            seed_title = seed_track.get('Name')
+    while playlist_duration < target_duration:
+        for genre in selected_genres:
+            genre_tracks = [track for track in tracks if genre in track.get('Genres', [])]
             
-            similar_tracks, similar_artists = lastfm.get_similar_tracks(seed_artist, seed_title)
+            if genre_tracks:
+                seed_track = random.choice(genre_tracks)  # Pick a random track from the genre
+                seed_artist = seed_track.get('AlbumArtist')
+                seed_title = seed_track.get('Name')
+                
+                similar_tracks, _ = lastfm.get_similar_tracks(seed_artist, seed_title)
 
-            # Add the seed track to the playlist if it's not already in the set
-            if seed_track['Id'] not in seen_track_ids:
-                selected_tracks.append(seed_track)
-                seen_track_ids.add(seed_track['Id'])
+                # Add the seed track to the playlist if it's not already in the set
+                if seed_track['Id'] not in seen_track_ids:
+                    selected_tracks.append(seed_track)
+                    seen_track_ids.add(seed_track['Id'])
+                    playlist_duration += seed_track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
 
-            # Add similar tracks from Emby library by cross-referencing with similar tracks obtained from Last.fm
-            similar_track_titles = [similar_track.item.title for similar_track in similar_tracks]
-            
-            for track in tracks:
-                if track.get('Name') in similar_track_titles and track['Id'] not in seen_track_ids:
-                    selected_tracks.append(track)
-                    seen_track_ids.add(track['Id'])
+                # Add similar tracks from Emby library by cross-referencing with similar tracks obtained from Last.fm
+                similar_track_titles = [similar_track.item.title for similar_track in similar_tracks]
+                
+                for track in tracks:
+                    if track.get('Name') in similar_track_titles and track['Id'] not in seen_track_ids:
+                        selected_tracks.append(track)
+                        seen_track_ids.add(track['Id'])
+                        playlist_duration += track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
+                        
+                        # Break early if target duration is reached
+                        if playlist_duration >= target_duration:
+                            break
+            # Break early if target duration is reached
+            if playlist_duration >= target_duration:
+                break
     
-    return selected_tracks  # Return the list of unique selected tracks
+    return selected_tracks  # Return the list of unique selected tracks up to the target duration
 
 def generate_radio_playlists(tracks):
     """Generate dynamic radio playlists based on different times of the day.
