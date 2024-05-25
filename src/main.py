@@ -478,7 +478,9 @@ def generate_playlists():
     # Generate and write decade-based playlists
     generate_decade_playlists(all_audio_items['Items'], destination)
     
-    sync_tracks_in_batches(tracks_to_sync, batch_size=5)
+    # if env vars AZURACAST_HOST, AZURACAST_API_KEY and AZURACAST_STATIONID are set, sync tracks to Azuracast
+    if os.getenv('AZURACAST_HOST') and os.getenv('AZURACAST_API_KEY') and os.getenv('AZURACAST_STATIONID'):
+        sync_tracks_in_batches(tracks_to_sync, batch_size=5)
 
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
