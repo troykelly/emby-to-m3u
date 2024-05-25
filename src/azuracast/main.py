@@ -6,7 +6,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import time
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AzuraCastSync:
@@ -53,13 +53,14 @@ class AzuraCastSync:
         headers.update({"X-API-Key": self.api_key})
 
         MAX_ATTEMPTS = 6
+        TIMEOUT = 240  # Increased timeout for larger file uploads
 
         for attempt in range(1, MAX_ATTEMPTS + 1):  # Retry up to 6 times
             session = None
             try:
                 session = self._get_session()
                 logger.debug(f"Attempt {attempt}: Making request to {url}")
-                response = session.request(method, url, headers=headers, data=data, json=json, timeout=10)
+                response = session.request(method, url, headers=headers, data=data, json=json, timeout=TIMEOUT)
                 response.raise_for_status()
 
                 if response.status_code == 413:
@@ -69,7 +70,7 @@ class AzuraCastSync:
 
                 return response.json()
 
-            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 logger.warning(f"Attempt {attempt}: Request to {url} failed: {e}. Retrying...")
                 time.sleep(2 ** attempt)  # Exponential backoff
 
@@ -82,7 +83,7 @@ class AzuraCastSync:
             finally:
                 if session:
                     session.close()  # Ensure session is closed after each attempt
-        
+            
         logger.error(f"Request to {url} failed after {MAX_ATTEMPTS} attempts")
         raise requests.exceptions.RequestException(f"Failed after {MAX_ATTEMPTS} attempts")
 
@@ -123,7 +124,7 @@ class AzuraCastSync:
 
         # Log file size in a readable format
         file_size = sizeof_fmt(len(file_content))
-        logger.info(f"Uploading file: {file_key}, Size: {file_size}")
+        logger.debug(f"Uploading file: {file_key}, Size: {file_size}")
 
         # Introduce a delay to avoid rate limiting issues
         time.sleep(1)
