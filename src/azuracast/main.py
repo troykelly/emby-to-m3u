@@ -57,6 +57,7 @@ class AzuraCastSync:
 
         for attempt in range(1, MAX_ATTEMPTS + 1):  # Retry up to 6 times
             session = None
+            response = None  # Initialize the response variable to ensure it exists
             try:
                 session = self._get_session()
                 logger.debug(f"Attempt {attempt}: Making request to {url}")
@@ -75,8 +76,8 @@ class AzuraCastSync:
                 time.sleep(2 ** attempt)  # Exponential backoff
 
             except requests.exceptions.RequestException as e:
-                # Add proper response handling
-                response_text = response.text if response is not None else "No response"
+                # Check if response is available to avoid referencing a variable that might not be set
+                response_text = response.text if response else "No response"
                 logger.error(f"Attempt {attempt}: Request to {url} failed: {e} - Response: {response_text}")
                 raise e  # Exit on non-retriable exceptions
 
