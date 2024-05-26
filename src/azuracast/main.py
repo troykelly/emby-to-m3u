@@ -117,7 +117,7 @@ class AzuraCastSync:
             file_key (str): Key (name) of the file to be uploaded.
 
         Returns:
-            str: ID of the uploaded file.
+            dict: Response from the server, commonly including the uploaded file's metadata.
         """
         endpoint = f"/station/{self.station_id}/files"
         b64_content = b64encode(file_content).decode("utf-8")
@@ -130,7 +130,9 @@ class AzuraCastSync:
         # Introduce a delay to avoid rate limiting issues
         time.sleep(1)
 
-        return self._perform_request("POST", endpoint, json=data)
+        response = self._perform_request("POST", endpoint, json=data)
+        logger.info(f"Uploaded file: {file_key}, Response: {response}")
+        return response
 
     def get_playlist(self, playlist_name):
         """Retrieve a playlist by name from Azuracast."""

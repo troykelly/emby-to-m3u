@@ -1,3 +1,4 @@
+import os
 import random
 
 class RadioPlaylistGenerator:
@@ -7,6 +8,23 @@ class RadioPlaylistGenerator:
         self.lastfm = lastfm_client
         self.azuracast_sync = azuracast_sync
         self.track_map = {track['Name']: track for track in self.emby_tracks}
+        self.playlists = self.load_playlists_from_env()
+
+    def load_playlists_from_env(self):
+        """Load playlists and their corresponding genres from environment variables."""
+        playlists = {}
+        for key, value in os.environ.items():
+            if key.startswith("RADIO_PLAYLIST_"):
+                playlist_name = self.convert_env_key_to_name(key)
+                genres = value.split(',')
+                playlists[playlist_name] = genres
+        return playlists
+
+    @staticmethod
+    def convert_env_key_to_name(key):
+        """Convert environment variable key to a proper playlist name."""
+        name_parts = key[len("RADIO_PLAYLIST_"):].split('_')
+        return ' '.join(word.capitalize() for word in name_parts)
 
     def generate_playlist(self, genres, min_duration):
         """Generates a radio playlist based on input genres and requested minimum duration."""
@@ -30,11 +48,12 @@ class RadioPlaylistGenerator:
                 if playlist_duration >= min_duration:
                     break
 
-                track = self.track_map.get(similar_track.title)
-                if track and track['Id'] not in seen_tracks:
-                    playlist.append(track)
-                    playlist_duration += track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
-                    seen_tracks.add(track['Id'])
+                if similar_track and similar_track.item:
+                    track = self.track_map.get(similar_track.item.title)
+                    if track and track['Id'] not in seen_tracks:
+                        playlist.append(track)
+                        playlist_duration += track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
+                        seen_tracks.add(track['Id'])
 
         return playlist
 
