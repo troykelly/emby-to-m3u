@@ -131,6 +131,43 @@ class AzuraCastSync:
         time.sleep(1)
 
         return self._perform_request("POST", endpoint, json=data)
+              
+    def get_playlist(self, playlist_name):
+        """Retrieve a playlist by name from Azuracast."""
+        endpoint = f"/station/{self.station_id}/playlists"
+        playlists = self._perform_request("GET", endpoint)
+        for playlist in playlists:
+            if playlist['name'] == playlist_name:
+                return playlist
+        return None
+
+    def create_playlist(self, playlist_name):
+        """Create a new playlist in Azuracast."""
+        endpoint = f"/station/{self.station_id}/playlists"
+        data = {"name": playlist_name, "type": "default"}
+        return self._perform_request("POST", endpoint, json=data)
+    
+    def empty_playlist(self, playlist_id):
+        """Empties a playlist.
+        
+        Args:
+            playlist_id (int): ID of the playlist to be emptied.
+        
+        Returns:
+            dict: JSON response from the server.
+        """
+        endpoint = f"/station/{self.station_id}/playlist/{playlist_id}/empty"
+        return self._perform_request('DELETE', endpoint)
+
+    def add_tracks_to_playlist(self, playlist_id, tracks):
+        """Add multiple tracks to a playlist."""
+        for track in tracks:
+            endpoint = f"/station/{self.station_id}/playlist/{playlist_id}/tracks"
+            data = {"track_ids": [track]}
+            try:
+                self._perform_request("POST", endpoint, json=data)
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Failed to add track {track} to playlist {playlist_id}: {e}")
 
 def sizeof_fmt(num, suffix='B'):
     """Convert file size to a readable format."""
