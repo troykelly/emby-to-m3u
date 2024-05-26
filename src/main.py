@@ -659,19 +659,38 @@ def sync_with_azuracast(playlist_name, track_paths):
 
     if playlist:
         playlist_id = playlist['id']
-        azuracast_sync.empty_playlist(playlist_id)  # Use the correct function
+        azuracast_sync.empty_playlist(playlist_id)
     else:
         created_playlist = azuracast_sync.create_playlist(playlist_name)
         playlist_id = created_playlist['id']
+    
+    known_tracks = azuracast_sync.get_known_tracks()
 
     for track_path in track_paths:
         try:
-            # Assuming track_path can be used directly
-            azuracast_sync.add_tracks_to_playlist(playlist_id, [track_path])
+            for file in known_tracks:
+                generated_path = generate_azuracast_file_path(file)
+                if generated_path == track_path:
+                    azuracast_sync.add_to_playlist(file['id'], playlist_id)
+                    break
+            else:
+                logger.warning(f"Track not found in known tracks: {track_path}")
         except Exception as e:
             logger.warning(f"Failed to add {track_path} to {playlist_name} in Azuracast: {e}")
     
     # sleep(1)  # Delay to avoid rate limiting
+
+def generate_azuracast_file_path(track):
+    """Generate file path used to store file in AzuraCast."""
+    artist_name = track.get('AlbumArtist', 'Unknown Artist')
+    album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+    disk_number = track.get('ParentIndexNumber', 1)
+    track_number = track.get('IndexNumber', 1)
+    title = track.get('Name', 'Unknown Title')
+    file_path = track.get('Path')
+    file_extension = os.path.splitext(file_path)[1]
+    
+    return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
 
 if __name__ == "__main__":
     cron_expression = os.getenv('M3U_CRON')

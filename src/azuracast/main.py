@@ -13,7 +13,7 @@ class AzuraCastSync:
     """Client for interacting with the AzuraCast API for syncing playlists."""
 
     def __init__(self):
-        """Initializes the AzuraCast client with environment variables."""
+        """Initializes the Azuracast client with environment variables."""
         self.host = os.getenv('AZURACAST_HOST')
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
@@ -34,17 +34,17 @@ class AzuraCastSync:
 
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
         """Performs an HTTP request with connection handling and retry logic.
-
+        
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
             endpoint (str): API endpoint.
             headers (dict, optional): Request headers.
             data (dict, optional): Data to be sent in the body of the request.
             json (dict, optional): JSON data to be sent in the body of the request.
-
+        
         Returns:
             dict: JSON response.
-
+        
         Raises:
             requests.exceptions.RequestException: If the HTTP request encounters an error.
         """
@@ -131,7 +131,7 @@ class AzuraCastSync:
         time.sleep(1)
 
         return self._perform_request("POST", endpoint, json=data)
-              
+
     def get_playlist(self, playlist_name):
         """Retrieve a playlist by name from Azuracast."""
         endpoint = f"/station/{self.station_id}/playlists"
@@ -159,15 +159,22 @@ class AzuraCastSync:
         endpoint = f"/station/{self.station_id}/playlist/{playlist_id}/empty"
         return self._perform_request('DELETE', endpoint)
 
-    def add_tracks_to_playlist(self, playlist_id, tracks):
-        """Add multiple tracks to a playlist."""
-        for track in tracks:
-            endpoint = f"/station/{self.station_id}/playlist/{playlist_id}/tracks"
-            data = {"track_ids": [track]}
-            try:
-                self._perform_request("POST", endpoint, json=data)
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Failed to add track {track} to playlist {playlist_id}: {e}")
+    def add_to_playlist(self, file_id, playlist_id):
+        """
+        Adds a file to a playlist.
+        
+        Args:
+            file_id (int): ID of the file to be added.
+            playlist_id (int): ID of the playlist.
+        
+        Returns:
+            dict: JSON response from the server.
+        """
+        endpoint = f"/station/{self.station_id}/file/{file_id}"
+        data = {
+            "playlists": [playlist_id]
+        }
+        return self._perform_request('PUT', endpoint, json=data)
 
 def sizeof_fmt(num, suffix='B'):
     """Convert file size to a readable format."""
