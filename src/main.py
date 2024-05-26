@@ -26,25 +26,67 @@ $ python3 main.py
 """
 
 import os
-import re
-import requests
-import tempfile
 import shutil
-import schedule
-import time
 import logging
+import requests
 import random
 from datetime import datetime
-from dateutil.parser import parse
 from collections import defaultdict, Counter
 from tqdm import tqdm
-from croniter import croniter
-from azuracast.main import AzuraCastSync
-from lastfm.main import LastFM
+import tempfile
+import re
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from radioplaylist.main import RadioPlaylistGenerator
+from lastfm.main import LastFM
+from azuracast.main import AzuraCastSync
+from dateutil.parser import parse
+from croniter import croniter
+from time import sleep
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def generate_playlists():
+    """Main function to generate m3u playlists for genres, artists, albums, and years."""
+    destination = os.getenv('M3U_DESTINATION')
+    if not destination:
+        raise ValueError("Environment variable M3U_DESTINATION is not set.")
+
+    logger.info("Generating playlists")
+
+    genre_dir, artist_dir, album_dir = ensure_directories_exist(destination)
+
+    manager = PlaylistManager()
+    manager.fetch_tracks()
+    manager.process_tracks()
+    manager.disambiguate_names()
+    manager.write_playlists(genre_dir, artist_dir, album_dir)
+    generate_year_playlists(manager.tracks, destination)
+    generate_decade_playlists(manager.tracks, destination)
+
+    min_radio_duration = 86400  # Example duration for radio playlist in seconds (24 hours)
+
+    manager.generate_and_upload_radio_playlists(min_radio_duration)
+    manager.sync_tracks()
+
+def ensure_directories_exist(destination):
+    """Ensure the required directories exist.
+
+    Args:
+        destination (str): Base directory to ensure exists.
+
+    Returns:
+        tuple: Directories for genre, artist, and album playlists.
+    """
+    genre_dir = os.path.join(destination, '_genre')
+    artist_dir = os.path.join(destination, '_artist')
+    album_dir = os.path.join(destination, '_album')
+    os.makedirs(destination, exist_ok=True)
+    os.makedirs(genre_dir, exist_ok=True)
+    os.makedirs(artist_dir, exist_ok=True)
+    os.makedirs(album_dir, exist_ok=True)
+    return genre_dir, artist_dir, album_dir
+
 
 class PlaylistManager:
     """Manages music tracks and playlist generation."""
@@ -151,6 +193,81 @@ class PlaylistManager:
         if os.getenv('AZURACAST_HOST') and os.getenv('AZURACAST_API_KEY') and os.getenv('AZURACAST_STATIONID'):
             sync_tracks_in_batches(self.tracks_to_sync, batch_size=5)
 
+    def generate_and_upload_radio_playlists(self, min_duration):
+        """Generates radio playlists for different time segments and uploads them to AzuraCast."""
+        lastfm = LastFM()
+        azuracast_sync = AzuraCastSync()
+
+        if not azuracast_sync.host or not azuracast_sync.api_key or not azuracast_sync.station_id:
+            logger.error("AzuraCast environment settings are missing. Skipping playlist upload.")
+            return
+
+        radio_generator = RadioPlaylistGenerator(self.tracks, lastfm, azuracast_sync)
+        
+        for time_segment, genres in radio_generator.playlists.items():
+            playlist = radio_generator.generate_playlist(genres, min_duration)
+            if not playlist:
+                logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
+                continue
+            
+            playlist_name = f"General - {time_segment}"
+            clear_playlist = True  # Clear the playlist initially
+            
+            if clear_playlist:
+                self._clear_azuracast_playlist(azuracast_sync, playlist_name)
+            
+            self._upload_tracks_to_azuracast(azuracast_sync, playlist, playlist_name)
+
+    def _clear_azuracast_playlist(self, azuracast_sync, playlist_name):
+        """Clears the existing AzuraCast playlist if it exists."""
+        playlist = azuracast_sync.get_playlist(playlist_name)
+        if playlist:
+            azuracast_sync.empty_playlist(playlist['id'])
+
+    def _upload_tracks_to_azuracast(self, azuracast_sync, playlist, playlist_name):
+        """Uploads tracks to AzuraCast and adds them to the specified playlist."""
+        known_tracks = azuracast_sync.get_known_tracks()
+
+        for track in playlist:
+            try:
+                file_content = get_emby_file_content(track)
+                azuracast_file_path = generate_azuracast_file_path(track)
+
+                if not azuracast_sync.check_file_in_azuracast(known_tracks, azuracast_file_path):
+                    upload_response = azuracast_sync.upload_file_to_azuracast(file_content, azuracast_file_path)
+                    track_id = upload_response.get("id")  # Use the proper field from response
+
+                    if not track_id:
+                        logger.error(f"Failed to get a valid track ID for '{track['Name']}'")
+                        continue
+
+                    logger.info(f"Uploaded track '{track['Name']}' to AzuraCast.")
+                else:
+                    logger.info(f"Track '{track['Name']}' already exists in AzuraCast.")
+                    track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
+                    if not track_id:
+                        logger.error(f"Failed to find existing track ID for '{track['Name']}'")
+                        continue
+
+                playlist_info = azuracast_sync.get_playlist(playlist_name)
+                if playlist_info:
+                    azuracast_sync.add_to_playlist(track_id, playlist_info['id'])
+                    logger.info(f"Added '{track['Name']}' to '{playlist_name}' playlist in Azuracast.")
+                else:
+                    created_playlist = azuracast_sync.create_playlist(playlist_name)
+                    azuracast_sync.add_to_playlist(track_id, created_playlist['id'])
+                    logger.info(f"Created and added '{track['Name']}' to new '{playlist_name}' playlist in Azuracast.")
+
+            except Exception as e:
+                logger.error(f"Failed to process track '{track['Name']}' for Azuracast: {e}")
+
+    def _find_azuracast_track_id(self, known_tracks, azuracast_file_path):
+        """Helper method to find the AzuraCast file ID based on the file path."""
+        for known_track in known_tracks:
+            if known_track['path'] == azuracast_file_path:
+                return known_track['id']
+        return None
+
 def get_emby_data(endpoint):
     """Retrieve data from given Emby API endpoint.
 
@@ -245,7 +362,7 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
 
     # Get the prefix to be stripped from the environment variable
     strip_prefix = os.getenv('M3U_STRIP_PREFIX', '')
-
+    
     def strip_path_prefix(path):
         """Strip the defined prefix from the path if it exists."""
         if strip_prefix and path.startswith(strip_prefix):
@@ -255,7 +372,8 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
     for track in tracks:
         path = track.get('Path', '')
         if path:
-            path = strip_path_prefix(path)
+            azuracast_file_path = generate_azuracast_file_path(track)  # Use the same path generation logic
+            path = strip_path_prefix(azuracast_file_path)
             if path not in existing_tracks:
                 new_tracks.append(track)
 
@@ -318,8 +436,8 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                 if the_audio_db_artist_id:
                     f.write(f'#EXT-X-THEAUDIODB-ARTISTID:{the_audio_db_artist_id}\n')
                 
-                # Write the final path without prefix
-                f.write(f'{strip_path_prefix(path)}\n')
+                azuracast_file_path = generate_azuracast_file_path(track)
+                f.write(f'{strip_path_prefix(azuracast_file_path)}\n')
         
         shutil.move(temp_file.name, filename)
     except Exception as e:
@@ -428,7 +546,7 @@ def generate_decade_playlists(tracks, destination):
 
 def sizeof_fmt(num, suffix='B'):
     """Convert file size to a readable format."""
-    for unit in ['','K','M','G','T','P','E','Z']:
+    for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z']:
         if abs(num) < 1024.0:
             return f"{num:3.1f}{unit}{suffix}"
         num /= 1024.0
@@ -466,6 +584,18 @@ def sync_tracks_in_batches(tracks_to_sync, batch_size=1):
 
             batch_prog.update(1)  # Update progress for each batch
 
+def generate_azuracast_file_path(track):
+    """Generate file path used to store file in AzuraCast."""
+    artist_name = track.get('AlbumArtist', 'Unknown Artist')
+    album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+    disk_number = track.get('ParentIndexNumber', 1)
+    track_number = track.get('IndexNumber', 1)
+    title = track.get('Name', 'Unknown Title')
+    file_path = track.get('Path')
+    file_extension = os.path.splitext(file_path)[1]
+    
+    return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
+
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
 
@@ -481,133 +611,11 @@ def cron_schedule(cron_expression):
         delay = (next_run - now).total_seconds()
 
         logger.info(f"Next run scheduled at {next_run} (in {delay} seconds)")
-        time.sleep(delay)
+        sleep(delay)
 
         logger.info("Running scheduled job")
         generate_playlists()
         logger.info("Job execution completed")
-
-def ensure_directories_exist(destination):
-    """Ensure the required directories exist.
-
-    Args:
-        destination (str): Base directory to ensure exists.
-
-    Returns:
-        tuple: Directories for genre, artist, and album playlists.
-    """
-    genre_dir = os.path.join(destination, '_genre')
-    artist_dir = os.path.join(destination, '_artist')
-    album_dir = os.path.join(destination, '_album')
-    os.makedirs(destination, exist_ok=True)
-    os.makedirs(genre_dir, exist_ok=True)
-    os.makedirs(artist_dir, exist_ok=True)
-    os.makedirs(album_dir, exist_ok=True)
-    return genre_dir, artist_dir, album_dir
-
-def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, target_duration=28800):
-    """Create dynamic radio playlists based on time of day using LastFM recommendations.
-
-    Args:
-        tracks (list): List of track dictionaries.
-        time_of_day (str): Time of day ('morning', 'afternoon', 'evening').
-        lastfm (LastFM): LastFM client for fetching recommendations.
-        target_duration (int, optional): Target duration for the playlist in seconds. Default is 28800 seconds (8 hours).
-
-    Returns:
-        list: List of selected tracks for the radio playlist.
-    """
-    seed_genres = {
-        'morning': ['Rock', 'Pop'],
-        'afternoon': ['Hip-Hop', 'Dance'],
-        'evening': ['Jazz', 'Blues']
-    }
-    
-    selected_genres = seed_genres.get(time_of_day, [])
-    selected_tracks = []
-    seen_track_ids = set()
-    playlist_duration = 0
-
-    while playlist_duration < target_duration:
-        for genre in selected_genres:
-            genre_tracks = [track for track in tracks if genre in track.get('Genres', [])]
-            
-            if genre_tracks:
-                seed_track = random.choice(genre_tracks)  # Pick a random track from the genre
-                seed_artist = seed_track.get('AlbumArtist')
-                seed_title = seed_track.get('Name')
-                
-                similar_tracks, _ = lastfm.get_similar_tracks(seed_artist, seed_title)
-
-                # Add the seed track to the playlist if it's not already in the set
-                if seed_track['Id'] not in seen_track_ids:
-                    selected_tracks.append(seed_track)
-                    seen_track_ids.add(seed_track['Id'])
-                    playlist_duration += seed_track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
-
-                # Add similar tracks from Emby library by cross-referencing with similar tracks obtained from Last.fm
-                similar_track_titles = [similar_track.item.title for similar_track in similar_tracks]
-                
-                for track in tracks:
-                    if track.get('Name') in similar_track_titles and track['Id'] not in seen_track_ids:
-                        selected_tracks.append(track)
-                        seen_track_ids.add(track['Id'])
-                        playlist_duration += track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
-                        
-                        # Break early if target duration is reached
-                        if playlist_duration >= target_duration:
-                            break
-            # Break early if target duration is reached
-            if playlist_duration >= target_duration:
-                break
-    
-    return selected_tracks  # Return the list of unique selected tracks up to the target duration
-
-def generate_radio_playlists(tracks):
-    """Generate dynamic radio playlists based on different times of the day.
-
-    Args:
-        tracks (list): List of track dictionaries.
-    """
-    destination = os.getenv('M3U_DESTINATION')
-    if not destination:
-        raise ValueError("Environment variable M3U_DESTINATION is not set.")
-
-    radio_dir = os.path.join(destination, '_radio')
-    os.makedirs(radio_dir, exist_ok=True)
-
-    time_segments = ['morning', 'afternoon', 'evening']
-    
-    lastfm = LastFM()  # Initialize LastFM client
-
-    for time_segment in time_segments:
-        if lastfm.network:  # Proceed if LastFM network is initialized
-            radio_playlist = create_dynamic_radio_playlist(tracks, time_segment, lastfm)
-            if radio_playlist:
-                radio_filename = os.path.join(radio_dir, f'radio_{time_segment}.m3u')
-                write_m3u_playlist(radio_filename, radio_playlist)
-        else:
-            logger.error("LastFM network is not initialized. Skipping dynamic playlist generation.")
-
-def generate_playlists():
-    """Main function to generate m3u playlists for genres, artists, albums, and years."""
-    destination = os.getenv('M3U_DESTINATION')
-    if not destination:
-        raise ValueError("Environment variable M3U_DESTINATION is not set.")
-
-    logger.info("Generating playlists")
-    
-    genre_dir, artist_dir, album_dir = ensure_directories_exist(destination)
-
-    manager = PlaylistManager()
-    manager.fetch_tracks()
-    manager.process_tracks()
-    manager.disambiguate_names()
-    manager.write_playlists(genre_dir, artist_dir, album_dir)
-    generate_year_playlists(manager.tracks, destination)
-    generate_decade_playlists(manager.tracks, destination)
-    generate_radio_playlists(manager.tracks)  # Generate dynamic radio playlists after generating other playlists
-    manager.sync_tracks()
 
 if __name__ == "__main__":
     cron_expression = os.getenv('M3U_CRON')

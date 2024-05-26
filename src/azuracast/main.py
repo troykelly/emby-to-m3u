@@ -13,7 +13,7 @@ class AzuraCastSync:
     """Client for interacting with the AzuraCast API for syncing playlists."""
 
     def __init__(self):
-        """Initializes the AzuraCast client with environment variables."""
+        """Initializes the Azuracast client with environment variables."""
         self.host = os.getenv('AZURACAST_HOST')
         self.api_key = os.getenv('AZURACAST_API_KEY')
         self.station_id = os.getenv('AZURACAST_STATIONID')
@@ -34,17 +34,17 @@ class AzuraCastSync:
 
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
         """Performs an HTTP request with connection handling and retry logic.
-
+        
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
             endpoint (str): API endpoint.
             headers (dict, optional): Request headers.
             data (dict, optional): Data to be sent in the body of the request.
             json (dict, optional): JSON data to be sent in the body of the request.
-
+        
         Returns:
             dict: JSON response.
-
+        
         Raises:
             requests.exceptions.RequestException: If the HTTP request encounters an error.
         """
@@ -117,7 +117,7 @@ class AzuraCastSync:
             file_key (str): Key (name) of the file to be uploaded.
 
         Returns:
-            str: ID of the uploaded file.
+            dict: Response from the server, commonly including the uploaded file's metadata.
         """
         endpoint = f"/station/{self.station_id}/files"
         b64_content = b64encode(file_content).decode("utf-8")
@@ -130,7 +130,53 @@ class AzuraCastSync:
         # Introduce a delay to avoid rate limiting issues
         time.sleep(1)
 
+        response = self._perform_request("POST", endpoint, json=data)
+        logger.info(f"Uploaded file: {file_key}, Response: {response}")
+        return response
+
+    def get_playlist(self, playlist_name):
+        """Retrieve a playlist by name from Azuracast."""
+        endpoint = f"/station/{self.station_id}/playlists"
+        playlists = self._perform_request("GET", endpoint)
+        for playlist in playlists:
+            if playlist['name'] == playlist_name:
+                return playlist
+        return None
+
+    def create_playlist(self, playlist_name):
+        """Create a new playlist in Azuracast."""
+        endpoint = f"/station/{self.station_id}/playlists"
+        data = {"name": playlist_name, "type": "default"}
         return self._perform_request("POST", endpoint, json=data)
+    
+    def empty_playlist(self, playlist_id):
+        """Empties a playlist.
+        
+        Args:
+            playlist_id (int): ID of the playlist to be emptied.
+        
+        Returns:
+            dict: JSON response from the server.
+        """
+        endpoint = f"/station/{self.station_id}/playlist/{playlist_id}/empty"
+        return self._perform_request('DELETE', endpoint)
+
+    def add_to_playlist(self, file_id, playlist_id):
+        """
+        Adds a file to a playlist.
+        
+        Args:
+            file_id (int): ID of the file to be added.
+            playlist_id (int): ID of the playlist.
+        
+        Returns:
+            dict: JSON response from the server.
+        """
+        endpoint = f"/station/{self.station_id}/file/{file_id}"
+        data = {
+            "playlists": [playlist_id]
+        }
+        return self._perform_request('PUT', endpoint, json=data)
 
 def sizeof_fmt(num, suffix='B'):
     """Convert file size to a readable format."""
