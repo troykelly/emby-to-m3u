@@ -34,6 +34,7 @@ import schedule
 import time
 import logging
 import random
+import time
 from datetime import datetime
 from dateutil.parser import parse
 from collections import defaultdict, Counter
@@ -245,6 +246,9 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
 
     # Get the prefix to be stripped from the environment variable
     strip_prefix = os.getenv('M3U_STRIP_PREFIX', '')
+    azuracast_host = os.getenv('AZURACAST_HOST')
+    azuracast_api_key = os.getenv('AZURACAST_API_KEY')
+    azuracast_station_id = os.getenv('AZURACAST_STATIONID')
 
     def strip_path_prefix(path):
         """Strip the defined prefix from the path if it exists."""
@@ -296,6 +300,14 @@ def write_m3u_playlist(filename, tracks, genre=None, artist=None, album=None):
                 mb_release_group_id = external_ids['MusicBrainzReleaseGroupId']
                 the_audio_db_album_id = external_ids['TheAudioDbAlbumId']
                 the_audio_db_artist_id = external_ids['TheAudioDbArtistId']
+                
+                # Determine file path based on Azuracast environment variables
+                if azuracast_host and azuracast_api_key and azuracast_station_id:
+                    file_extension = os.path.splitext(path)[1]
+                    disk_number = track.get('ParentIndexNumber', 1)
+                    track_number = track.get('IndexNumber', 1)
+                    azuracast_file_path = f"{album_artist}/{album} ({album})/{disk_number:02d} {track_number:02d} {title}{file_extension}"
+                    path = azuracast_file_path
                 
                 # Write extended information
                 f.write(f'#EXTINF:{duration}, {title}\n')
@@ -505,15 +517,14 @@ def ensure_directories_exist(destination):
     os.makedirs(album_dir, exist_ok=True)
     return genre_dir, artist_dir, album_dir
 
-def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, azuracast_sync, known_tracks, target_duration=28800):
-    """Create dynamic radio playlists based on time of day using LastFM recommendations and AzuraCast known tracks.
+def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, azuracast_sync, target_duration=28800):
+    """Create dynamic radio playlists based on time of day using LastFM recommendations.
 
     Args:
         tracks (list): List of track dictionaries.
         time_of_day (str): Time of day ('morning', 'afternoon', 'evening').
         lastfm (LastFM): LastFM client for fetching recommendations.
-        azuracast_sync (AzuraCastSync): AzuraCast client for checking known tracks.
-        known_tracks (list): List of known tracks in AzuraCast.
+        azuracast_sync (AzuraCastSync): AzuraCast client for known tracks.
         target_duration (int, optional): Target duration for the playlist in seconds. Default is 28800 seconds (8 hours).
 
     Returns:
@@ -525,6 +536,10 @@ def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, azuracast_sync, k
         'evening': ['Jazz', 'Blues']
     }
     
+    logger.info("Fetching known tracks from AzuraCast...")
+    known_tracks_azuracast = azuracast_sync.get_known_tracks()  # Pre-fetch known tracks
+    logger.info("Known tracks fetched.")
+
     selected_genres = seed_genres.get(time_of_day, [])
     selected_tracks = []
     seen_track_ids = set()
@@ -532,19 +547,20 @@ def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, azuracast_sync, k
 
     while playlist_duration < target_duration:
         for genre in selected_genres:
-            genre_tracks = [track for track in tracks if genre in track.get('Genres', [])]
+            logging.info(f"Fetching tracks for genre: {genre}")
+            genre_tracks = [track for track in tracks if genre in track.get('Genres', []) and track.get('Path') in known_tracks_azuracast]
+            logging.info(f"Found {len(genre_tracks)} tracks for genre: {genre}")
             
             if genre_tracks:
                 seed_track = random.choice(genre_tracks)  # Pick a random track from the genre
                 seed_artist = seed_track.get('AlbumArtist')
                 seed_title = seed_track.get('Name')
                 
+                logger.info(f"Fetching similar tracks for: Artist: {seed_artist}, Track: {seed_title}")
                 similar_tracks, _ = lastfm.get_similar_tracks(seed_artist, seed_title)
 
                 # Add the seed track to the playlist if it's not already in the set
-                seed_azuracast_path = f"{seed_artist}/{seed_track.get('Album', 'Unknown Album')} ({seed_track.get('ProductionYear', 'Unknown Year')})/" \
-                                      f"{seed_track.get('ParentIndexNumber', 1):02d} {seed_track.get('IndexNumber', 1):02d} {seed_title}{os.path.splitext(seed_track['Path'])[1]}"
-                if seed_track['Id'] not in seen_track_ids and azuracast_sync.check_file_in_azuracast(known_tracks, seed_azuracast_path):
+                if seed_track['Id'] not in seen_track_ids:
                     selected_tracks.append(seed_track)
                     seen_track_ids.add(seed_track['Id'])
                     playlist_duration += seed_track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
@@ -552,20 +568,19 @@ def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, azuracast_sync, k
                 # Add similar tracks from Emby library by cross-referencing with similar tracks obtained from Last.fm
                 similar_track_titles = [similar_track.item.title for similar_track in similar_tracks]
                 
-                for track in tracks:
-                    similar_azuracast_path = f"{track.get('AlbumArtist')}/{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})/" \
-                                             f"{track.get('ParentIndexNumber', 1):02d} {track.get('IndexNumber', 1):02d} {track.get('Name')}{os.path.splitext(track['Path'])[1]}" 
-                    if track.get('Name') in similar_track_titles and track['Id'] not in seen_track_ids and azuracast_sync.check_file_in_azuracast(known_tracks, similar_azuracast_path):
+                for track in genre_tracks:
+                    if track.get('Name') in similar_track_titles and track.get('Path') in known_tracks_azuracast and track['Id'] not in seen_track_ids:
                         selected_tracks.append(track)
                         seen_track_ids.add(track['Id'])
                         playlist_duration += track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
-                        
-                        # Break early if target duration is reached
+
                         if playlist_duration >= target_duration:
                             break
-            # Break early if target duration is reached
+
             if playlist_duration >= target_duration:
                 break
+
+            time.sleep(1)  # Introduce a delay to avoid rate limiting
     
     return selected_tracks  # Return the list of unique selected tracks up to the target duration
 
@@ -586,16 +601,10 @@ def generate_radio_playlists(tracks):
     
     lastfm = LastFM()  # Initialize LastFM client
     azuracast_sync = AzuraCastSync()  # Initialize AzuraCast client
-    
-    if azuracast_sync.host and azuracast_sync.api_key and azuracast_sync.station_id:
-        known_tracks = azuracast_sync.get_known_tracks()
-    else:
-        logger.error("AzuraCast configuration is missing. Skipping dynamic playlist generation.")
-        return
 
     for time_segment in time_segments:
         if lastfm.network:  # Proceed if LastFM network is initialized
-            radio_playlist = create_dynamic_radio_playlist(tracks, time_segment, lastfm, azuracast_sync, known_tracks)
+            radio_playlist = create_dynamic_radio_playlist(tracks, time_segment, lastfm, azuracast_sync)
             if radio_playlist:
                 radio_filename = os.path.join(radio_dir, f'radio_{time_segment}.m3u')
                 write_m3u_playlist(radio_filename, radio_playlist)
