@@ -505,13 +505,15 @@ def ensure_directories_exist(destination):
     os.makedirs(album_dir, exist_ok=True)
     return genre_dir, artist_dir, album_dir
 
-def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, target_duration=28800):
-    """Create dynamic radio playlists based on time of day using LastFM recommendations.
+def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, azuracast_sync, known_tracks, target_duration=28800):
+    """Create dynamic radio playlists based on time of day using LastFM recommendations and AzuraCast known tracks.
 
     Args:
         tracks (list): List of track dictionaries.
         time_of_day (str): Time of day ('morning', 'afternoon', 'evening').
         lastfm (LastFM): LastFM client for fetching recommendations.
+        azuracast_sync (AzuraCastSync): AzuraCast client for checking known tracks.
+        known_tracks (list): List of known tracks in AzuraCast.
         target_duration (int, optional): Target duration for the playlist in seconds. Default is 28800 seconds (8 hours).
 
     Returns:
@@ -540,7 +542,9 @@ def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, target_duration=2
                 similar_tracks, _ = lastfm.get_similar_tracks(seed_artist, seed_title)
 
                 # Add the seed track to the playlist if it's not already in the set
-                if seed_track['Id'] not in seen_track_ids:
+                seed_azuracast_path = f"{seed_artist}/{seed_track.get('Album', 'Unknown Album')} ({seed_track.get('ProductionYear', 'Unknown Year')})/" \
+                                      f"{seed_track.get('ParentIndexNumber', 1):02d} {seed_track.get('IndexNumber', 1):02d} {seed_title}{os.path.splitext(seed_track['Path'])[1]}"
+                if seed_track['Id'] not in seen_track_ids and azuracast_sync.check_file_in_azuracast(known_tracks, seed_azuracast_path):
                     selected_tracks.append(seed_track)
                     seen_track_ids.add(seed_track['Id'])
                     playlist_duration += seed_track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
@@ -549,7 +553,9 @@ def create_dynamic_radio_playlist(tracks, time_of_day, lastfm, target_duration=2
                 similar_track_titles = [similar_track.item.title for similar_track in similar_tracks]
                 
                 for track in tracks:
-                    if track.get('Name') in similar_track_titles and track['Id'] not in seen_track_ids:
+                    similar_azuracast_path = f"{track.get('AlbumArtist')}/{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})/" \
+                                             f"{track.get('ParentIndexNumber', 1):02d} {track.get('IndexNumber', 1):02d} {track.get('Name')}{os.path.splitext(track['Path'])[1]}" 
+                    if track.get('Name') in similar_track_titles and track['Id'] not in seen_track_ids and azuracast_sync.check_file_in_azuracast(known_tracks, similar_azuracast_path):
                         selected_tracks.append(track)
                         seen_track_ids.add(track['Id'])
                         playlist_duration += track.get('RunTimeTicks', 0) // 10000000  # Convert ticks to seconds
@@ -579,10 +585,17 @@ def generate_radio_playlists(tracks):
     time_segments = ['morning', 'afternoon', 'evening']
     
     lastfm = LastFM()  # Initialize LastFM client
+    azuracast_sync = AzuraCastSync()  # Initialize AzuraCast client
+    
+    if azuracast_sync.host and azuracast_sync.api_key and azuracast_sync.station_id:
+        known_tracks = azuracast_sync.get_known_tracks()
+    else:
+        logger.error("AzuraCast configuration is missing. Skipping dynamic playlist generation.")
+        return
 
     for time_segment in time_segments:
         if lastfm.network:  # Proceed if LastFM network is initialized
-            radio_playlist = create_dynamic_radio_playlist(tracks, time_segment, lastfm)
+            radio_playlist = create_dynamic_radio_playlist(tracks, time_segment, lastfm, azuracast_sync, known_tracks)
             if radio_playlist:
                 radio_filename = os.path.join(radio_dir, f'radio_{time_segment}.m3u')
                 write_m3u_playlist(radio_filename, radio_playlist)
