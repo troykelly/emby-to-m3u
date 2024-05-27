@@ -1,6 +1,7 @@
 import os
 import requests
 import logging
+import tqdm
 from base64 import b64encode
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -203,48 +204,60 @@ class AzuraCastSync:
         playlist = self.get_playlist(playlist_name)
         if playlist:
             self.empty_playlist(playlist['id'])
+            
+    def generate_file_path(track):
+        """Generate file path used to store file in AzuraCast."""
+        artist_name = track.get('AlbumArtist', 'Unknown Artist')
+        album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+        disk_number = track.get('ParentIndexNumber', 1)
+        track_number = track.get('IndexNumber', 1)
+        title = track.get('Name', 'Unknown Title')
+        file_path = track.get('Path')
+        file_extension = os.path.splitext(file_path)[1]
+        
+        return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
 
-    # def upload_playlist(self, playlist, playlist_name):
-    #     """Uploads tracks to AzuraCast and adds them to the specified playlist.
+    def upload_playlist(self, playlist, playlist_name):
+        """Uploads tracks to AzuraCast and adds them to the specified playlist.
 
-    #     Args:
-    #         playlist (list): List of track dictionaries.
-    #         playlist_name (str): Name of the playlist.
-    #     """
-    #     known_tracks = self.get_known_tracks()
+        Args:
+            playlist (list): List of track dictionaries.
+            playlist_name (str): Name of the playlist.
+        """
+        known_tracks = self.get_known_tracks()
 
-    #     for track in playlist:
-    #         try:
-    #             file_content = get_emby_file_content(track)
-    #             azuracast_file_path = generate_azuracast_file_path(track)
+        for track in playlist:
+            try:
+                azuracast_file_path = self.generate_file_path(track)
 
-    #             if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
-    #                 upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
-    #                 track_id = upload_response.get("id")  # Use the proper field from response
+                if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
+                    file_content = track.download()
+                    upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
+                    track_id = upload_response.get("id")  # Use the proper field from response
 
-    #                 if not track_id:
-    #                     logger.error("Failed to get a valid track ID for '%s'", track['Name'])
-    #                     continue
+                    if not track_id:
+                        logger.error("Failed to get a valid track ID for '%s'", track['Name'])
+                        continue
 
-    #                 logger.info("Uploaded track '%s' to AzuraCast.", track['Name'])
-    #             else:
-    #                 logger.info("Track '%s' already exists in AzuraCast.", track['Name'])
-    #                 track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
-    #                 if not track_id:
-    #                     logger.error("Failed to find existing track ID for '%s'", track['Name'])
-    #                     continue
+                    logger.info("Uploaded track '%s' to AzuraCast.", track['Name'])
+                else:
+                    logger.info("Track '%s' already exists in AzuraCast.", track['Name'])
+                    track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
+                    if not track_id:
+                        logger.error("Failed to find existing track ID for '%s'", track['Name'])
+                        continue
 
-    #             playlist_info = self.get_playlist(playlist_name)
-    #             if playlist_info:
-    #                 self.add_to_playlist(track_id, playlist_info['id'])
-    #                 logger.info("Added '%s' to '%s' playlist in Azuracast.", track['Name'], playlist_name)
-    #             else:
-    #                 created_playlist = self.create_playlist(playlist_name)
-    #                 self.add_to_playlist(track_id, created_playlist['id'])
-    #                 logger.info("Created and added '%s' to new '%s' playlist in Azuracast.", track['Name'], playlist_name)
+                playlist_info = self.get_playlist(playlist_name)
+                if playlist_info:
+                    self.add_to_playlist(track_id, playlist_info['id'])
+                    logger.info("Added '%s' to '%s' playlist in Azuracast.", track['Name'], playlist_name)
+                else:
+                    created_playlist = self.create_playlist(playlist_name)
+                    self.add_to_playlist(track_id, created_playlist['id'])
+                    logger.info("Created and added '%s' to new '%s' playlist in Azuracast.", track['Name'], playlist_name)
 
-    #         except Exception as e:
-    #             logger.error("Failed to process track '%s' for Azuracast: %s", track['Name'], e)
+            except Exception as e:
+                logger.error("Failed to process track '%s' for Azuracast: %s", track['Name'], e)
 
     def _find_azuracast_track_id(self, known_tracks, azuracast_file_path):
         """Finds the AzuraCast file ID based on the file path.
