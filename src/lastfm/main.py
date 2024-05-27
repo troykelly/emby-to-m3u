@@ -131,7 +131,11 @@ class LastFM:
             return similar_tracks, similar_artists
 
         except pylast.WSError as e:
-            logger.error(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            # If error is "Track not found" output debug, otherwise output a warning
+            if 'Track not found' in str(e):
+                logger.debug(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            else:
+                logger.warn(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
             return [], []
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")

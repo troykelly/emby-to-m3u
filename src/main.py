@@ -73,7 +73,7 @@ def generate_playlists():
     # Write out playlists to the filesystem
     playlist_manager.write_playlists(genre_dir, artist_dir, album_dir, year_dir, decade_dir)
 
-    min_radio_duration = 86400  # Example duration for radio playlist in seconds (24 hours)
+    min_radio_duration = 14400  # Example duration for radio playlist in seconds (eg 86400 for 24 hours)
 
     azuracast_sync = AzuraCastSync()
     lastfm = LastFM()
@@ -116,6 +116,15 @@ def ensure_directories_exist(destination):
     os.makedirs(year_dir, exist_ok=True)
     os.makedirs(decade_dir, exist_ok=True)
     return genre_dir, artist_dir, album_dir, year_dir, decade_dir
+
+class Track(dict):
+    def __init__(self, track_data, playlist_manager):
+        super().__init__(track_data)
+        self.playlist_manager = playlist_manager
+
+    def download(self):
+        track_id = self['Id']
+        return self.playlist_manager.get_emby_file_content(track_id)
 
 class PlaylistManager:
     """Manages music tracks and playlist generation."""
@@ -217,12 +226,8 @@ class PlaylistManager:
             'MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,'
             'TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
         )
-        self.tracks = all_audio_items.get('Items', [])
-            
-        # Correctly attach the download method to each track
-        for track in self.tracks:
-            track_download_method = lambda track_id=track['Id']: self.get_emby_file_content(track_id)
-            track['download'] = track_download_method
+        # self.tracks = all_audio_items.get('Items', [])
+        self.tracks = [Track(item, self) for item in all_audio_items.get('Items', [])]
 
     def _get_emby_data(self, endpoint):
         """Retrieves data from a given Emby API endpoint.
