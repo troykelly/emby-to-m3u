@@ -130,6 +130,7 @@ class PlaylistManager:
         self.album_counter = Counter()
         self.tracks_to_sync = []
         self.azuracast_sync = AzuraCastSync()
+        self.ignored_genres = [genre.strip().lower() for genre in os.getenv('TRACK_IGNORE_GENRE', '').split(',')]
 
     def add_track(self, track):
         """Adds a track to the PlaylistManager.
@@ -218,8 +219,10 @@ class PlaylistManager:
         )
         self.tracks = all_audio_items.get('Items', [])
             
+        # Correctly attach the download method to each track
         for track in self.tracks:
-            track['download'] = lambda: self.get_emby_file_content(track['Id'])        
+            track_download_method = lambda track_id=track['Id']: self.get_emby_file_content(track_id)
+            track['download'] = track_download_method
 
     def _get_emby_data(self, endpoint):
         """Retrieves data from a given Emby API endpoint.
@@ -261,6 +264,10 @@ class PlaylistManager:
             track_genres = track.get('Genres', [])
             if not track_genres:
                 continue  # Skip tracks with no genre information
+            
+            # Skip tracks with ignored genres (case insensitive)
+            if any(genre.lower() in self.ignored_genres for genre in track_genres):
+                continue
             
             release_date = self._safe_date_parse(track.get('PremiereDate', '') or track.get('ProductionYear', ''), datetime.min)
 

@@ -117,7 +117,7 @@ class LastFM:
         """Get similar tracks from Last.fm based on a given track."""
         cached_result = self.cache.get(artist_name, track_name)
         if cached_result:
-            logger.info(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
+            logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
             return cached_result
         
         try:
