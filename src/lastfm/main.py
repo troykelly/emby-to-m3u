@@ -4,8 +4,11 @@ import logging
 import json
 import hashlib
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Set the logging level for pylast and httpx to WARN
+logging.getLogger('pylast').setLevel(logging.WARN)
+logging.getLogger('httpx').setLevel(logging.WARN)
 
 API_KEY = os.getenv('LAST_FM_API_KEY')
 API_SECRET = os.getenv('LAST_FM_API_SECRET')

@@ -1,5 +1,9 @@
 import os
 import random
+from tqdm import tqdm
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RadioPlaylistGenerator:
     def __init__(self, playlist_manager, lastfm_client, azuracast_sync):
@@ -50,38 +54,58 @@ class RadioPlaylistGenerator:
         return ' '.join(word.capitalize() for word in name_parts)
 
     def generate_playlist(self, genres, min_duration, playlist_name):
-        """Generates a radio playlist based on input genres, minimum duration, and playlist name."""
+        """Generates a radio playlist based on input genres, minimum duration, and playlist name.
+
+        Args:
+            genres (list): List of genres to include in the playlist.
+            min_duration (int): Minimum duration of the playlist in seconds.
+            playlist_name (str): Name of the playlist.
+            
+        Returns:
+            list: Generated playlist.
+        """
         playlist = []
         playlist_duration = 0  # Keep track of the total playlist duration
         seen_tracks = set()
 
-        while playlist_duration < min_duration:
-            genre = random.choice(genres)
-            seed_track = self._get_random_track_by_genre(genre)
+        # Initialize the progress bar
+        with tqdm(total=min_duration, desc=f"Generating playlist '{playlist_name}'", unit="second") as pbar:
+            while playlist_duration < min_duration:
+                genre = random.choice(genres)
+                seed_track = self._get_random_track_by_genre(genre)
 
-            if not seed_track or seed_track['Id'] in seen_tracks:
-                continue
+                if not seed_track or seed_track['Id'] in seen_tracks:
+                    continue
 
-            if self._is_rejected(seed_track, playlist_name):
-                continue
+                if self._is_rejected(seed_track, playlist_name):
+                    continue
 
-            playlist.append(seed_track)
-            playlist_duration += seed_track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
-            seen_tracks.add(seed_track['Id'])
+                playlist.append(seed_track)
+                duration = seed_track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
+                playlist_duration += duration
+                seen_tracks.add(seed_track['Id'])
 
-            similar_tracks = self._get_similar_tracks(seed_track)
-            for similar_track in similar_tracks:
-                if playlist_duration >= min_duration:
-                    break
+                # Update the progress bar
+                pbar.update(duration)
+                
+                similar_tracks = self._get_similar_tracks(seed_track)
+                for similar_track in similar_tracks:
+                    if playlist_duration >= min_duration:
+                        break
 
-                if similar_track and similar_track.item:
-                    track = self.playlist_manager.get_track_by_id(similar_track.item.title)
-                    if track and track['Id'] not in seen_tracks and not self._is_rejected(track, playlist_name):
-                        playlist.append(track)
-                        playlist_duration += track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
-                        seen_tracks.add(track['Id'])
+                    if similar_track and similar_track.item:
+                        track = self.playlist_manager.get_track_by_id(similar_track.item.title)
+                        if track and track['Id'] not in seen_tracks and not self._is_rejected(track, playlist_name):
+                            playlist.append(track)
+                            duration = track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
+                            playlist_duration += duration
+                            seen_tracks.add(track['Id'])
+
+                            # Update the progress bar
+                            pbar.update(duration)
 
         return playlist
+
 
     def _get_random_track_by_genre(self, genre):
         """Returns a random track from the playlist manager that matches the specified genre."""

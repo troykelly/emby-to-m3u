@@ -1,13 +1,12 @@
 import os
 import requests
 import logging
-import tqdm
+from tqdm import tqdm
 from base64 import b64encode
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import time
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AzuraCastSync:
