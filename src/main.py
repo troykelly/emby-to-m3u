@@ -61,13 +61,13 @@ def generate_playlists():
     playlist_manager.fetch_tracks()  # Fetch and set tracks
 
     # Add tracks and genres to PlaylistManager
-    for track in tqdm(playlist_manager.tracks, desc="Adding tracks and genres"):
+    for track in tqdm(playlist_manager.tracks, desc="Adding tracks and genres", unit="track"):
         playlist_manager.add_track(track)
         for genre in track.get('Genres', []):
             playlist_manager.add_genre(genre, track['Id'])
 
     # Process tracks to categorize by genre, artist, and album
-    playlist_manager.process_tracks()
+    playlist_manager.categorize_tracks()  # Correct method name
 
     # Write out playlists to the filesystem
     playlist_manager.write_playlists(genre_dir, artist_dir, album_dir)
@@ -120,7 +120,6 @@ def ensure_directories_exist(destination):
     os.makedirs(album_dir, exist_ok=True)
     return genre_dir, artist_dir, album_dir
 
-
 class PlaylistManager:
     """Manages music tracks and playlist generation."""
 
@@ -146,7 +145,8 @@ class PlaylistManager:
         if 'Id' not in track:
             raise ValueError("Track must have an 'Id' field.")
         self.track_map[track['Id']] = track
-        self.tracks.append(track)  # Ensure tracks are stored for subsequent processing
+        if track not in self.tracks:
+            self.tracks.append(track)
 
     def add_genre(self, genre, track_id):
         """Associates a track ID with a genre.
@@ -213,14 +213,12 @@ class PlaylistManager:
         response.raise_for_status()
         return response.json()
 
-    def process_tracks(self):
-        """Processes tracks to categorize them by genre, artist, and album."""
+    def categorize_tracks(self):
+        """Categorizes tracks by genre, artist, and album."""
         azuracast_sync = AzuraCastSync()
         known_tracks = azuracast_sync.get_known_tracks()
 
-        for track in tqdm(self.tracks, desc="Processing tracks"):
-            self.add_track(track)
-
+        for track in tqdm(self.tracks, desc="Categorizing tracks"):
             artist_name = track.get('AlbumArtist', 'Unknown Artist')
             album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
             disk_number = track.get('ParentIndexNumber', 1)
@@ -651,22 +649,6 @@ def generate_azuracast_file_path(track):
     file_extension = os.path.splitext(file_path)[1]
     
     return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
-
-def initialize_playlist_manager():
-    """Initialize PlaylistManager with tracks and genres from Emby data."""
-    playlist_manager = PlaylistManager()
-    emby_tracks = fetch_tracks_from_emby()
-    
-    # Add tracks to PlaylistManager
-    for track in emby_tracks:
-        playlist_manager.add_track(track)
-    
-    # Generate and add genres. This is where pre-generated genres come in.
-    for track in emby_tracks:
-        for genre in track.get('Genres', []):
-            playlist_manager.add_genre(genre, track['Id'])
-    
-    return playlist_manager
 
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
