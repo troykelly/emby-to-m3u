@@ -4,8 +4,11 @@ import logging
 import json
 import hashlib
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Set the logging level for pylast and httpx to WARN
+logging.getLogger('pylast').setLevel(logging.WARN)
+logging.getLogger('httpx').setLevel(logging.WARN)
 
 API_KEY = os.getenv('LAST_FM_API_KEY')
 API_SECRET = os.getenv('LAST_FM_API_SECRET')
@@ -114,7 +117,7 @@ class LastFM:
         """Get similar tracks from Last.fm based on a given track."""
         cached_result = self.cache.get(artist_name, track_name)
         if cached_result:
-            logger.info(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
+            logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
             return cached_result
         
         try:
@@ -128,7 +131,11 @@ class LastFM:
             return similar_tracks, similar_artists
 
         except pylast.WSError as e:
-            logger.error(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            # If error is "Track not found" output debug, otherwise output a warning
+            if 'Track not found' in str(e):
+                logger.debug(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            else:
+                logger.warn(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
             return [], []
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
