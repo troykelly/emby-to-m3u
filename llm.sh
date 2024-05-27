@@ -6,7 +6,7 @@ SRC_DIR="src"
 OUTPUT_FILE="llm.md"
 
 # Create or clear the output file
-echo "# LLM Prompt" > $OUTPUT_FILE
+echo "# Files" > $OUTPUT_FILE
 
 # Function to process each Python file
 process_file() {

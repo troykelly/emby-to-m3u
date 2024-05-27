@@ -19,7 +19,11 @@ class AzuraCastSync:
         self.station_id = os.getenv('AZURACAST_STATIONID')
 
     def _get_session(self):
-        """Creates a new session with retry strategy."""
+        """Creates a new session with retry strategy.
+
+        Returns:
+            requests.Session: Configured session object.
+        """
         session = requests.Session()
         retries = Retry(
             total=1,  # Retry strategy within a single request
@@ -34,17 +38,17 @@ class AzuraCastSync:
 
     def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
         """Performs an HTTP request with connection handling and retry logic.
-        
+
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
             endpoint (str): API endpoint.
             headers (dict, optional): Request headers.
             data (dict, optional): Data to be sent in the body of the request.
             json (dict, optional): JSON data to be sent in the body of the request.
-        
+
         Returns:
             dict: JSON response.
-        
+
         Raises:
             requests.exceptions.RequestException: If the HTTP request encounters an error.
         """
@@ -52,41 +56,42 @@ class AzuraCastSync:
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
 
-        MAX_ATTEMPTS = 6
-        TIMEOUT = 240  # Increased timeout for larger file uploads
+        max_attempts = 6
+        timeout = 240  # Increased timeout for larger file uploads
 
-        for attempt in range(1, MAX_ATTEMPTS + 1):  # Retry up to 6 times
+        for attempt in range(1, max_attempts + 1):  # Retry up to 6 times
             session = None
             response = None  # Initialize the response variable to ensure it exists
             try:
                 session = self._get_session()
-                logger.debug(f"Attempt {attempt}: Making request to {url}")
-                response = session.request(method, url, headers=headers, data=data, json=json, timeout=TIMEOUT)
+                logger.debug("Attempt %d: Making request to %s", attempt, url)
+                response = session.request(method, url, headers=headers, data=data, json=json, timeout=timeout)
                 response.raise_for_status()
 
                 if response.status_code == 413:
-                    logger.warning(f"Attempt {attempt}: Request to {url} failed due to size limit. Retrying...")
+                    logger.warning("Attempt %d: Request to %s failed due to size limit. Retrying...", attempt, url)
                     time.sleep(2 ** attempt)
                     continue  # Retry on 413 error
 
                 return response.json()
 
-            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                logger.warning(f"Attempt {attempt}: Request to {url} failed: {e}. Retrying...")
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                logger.warning("Attempt %d: Request to %s failed: %s. Retrying...", attempt, url, e)
                 time.sleep(2 ** attempt)  # Exponential backoff
 
             except requests.exceptions.RequestException as e:
                 # Check if response is available to avoid referencing a variable that might not be set
                 response_text = response.text if response else "No response"
-                logger.error(f"Attempt {attempt}: Request to {url} failed: {e} - Response: {response_text}")
+                logger.error("Attempt %d: Request to %s failed: %s - Response: %s", attempt, url, e, response_text)
                 raise e  # Exit on non-retriable exceptions
 
             finally:
                 if session:
                     session.close()  # Ensure session is closed after each attempt
-            
-        logger.error(f"Request to {url} failed after {MAX_ATTEMPTS} attempts")
-        raise requests.exceptions.RequestException(f"Failed after {MAX_ATTEMPTS} attempts")
+
+        logger.error("Request to %s failed after %d attempts", url, max_attempts)
+        raise requests.exceptions.RequestException(f"Failed after {max_attempts} attempts")
 
     def get_known_tracks(self):
         """Retrieves a list of all known tracks in Azuracast.
@@ -124,18 +129,25 @@ class AzuraCastSync:
         data = {"path": file_key, "file": b64_content}
 
         # Log file size in a readable format
-        file_size = sizeof_fmt(len(file_content))
-        logger.debug(f"Uploading file: {file_key}, Size: {file_size}")
+        file_size = self._sizeof_fmt(len(file_content))
+        logger.debug("Uploading file: %s, Size: %s", file_key, file_size)
 
         # Introduce a delay to avoid rate limiting issues
         time.sleep(1)
 
         response = self._perform_request("POST", endpoint, json=data)
-        logger.info(f"Uploaded file: {file_key}, Response: {response}")
+        logger.info("Uploaded file: %s, Response: %s", file_key, response)
         return response
 
     def get_playlist(self, playlist_name):
-        """Retrieve a playlist by name from Azuracast."""
+        """Retrieves a playlist by name from Azuracast.
+
+        Args:
+            playlist_name (str): Name of the playlist.
+
+        Returns:
+            dict: Playlist information if found, None otherwise.
+        """
         endpoint = f"/station/{self.station_id}/playlists"
         playlists = self._perform_request("GET", endpoint)
         for playlist in playlists:
@@ -144,17 +156,24 @@ class AzuraCastSync:
         return None
 
     def create_playlist(self, playlist_name):
-        """Create a new playlist in Azuracast."""
+        """Creates a new playlist in Azuracast.
+
+        Args:
+            playlist_name (str): Name of the new playlist.
+
+        Returns:
+            dict: Information of the created playlist.
+        """
         endpoint = f"/station/{self.station_id}/playlists"
         data = {"name": playlist_name, "type": "default"}
         return self._perform_request("POST", endpoint, json=data)
-    
+
     def empty_playlist(self, playlist_id):
         """Empties a playlist.
-        
+
         Args:
             playlist_id (int): ID of the playlist to be emptied.
-        
+
         Returns:
             dict: JSON response from the server.
         """
@@ -162,26 +181,99 @@ class AzuraCastSync:
         return self._perform_request('DELETE', endpoint)
 
     def add_to_playlist(self, file_id, playlist_id):
-        """
-        Adds a file to a playlist.
-        
+        """Adds a file to a playlist.
+
         Args:
             file_id (int): ID of the file to be added.
             playlist_id (int): ID of the playlist.
-        
+
         Returns:
             dict: JSON response from the server.
         """
         endpoint = f"/station/{self.station_id}/file/{file_id}"
-        data = {
-            "playlists": [playlist_id]
-        }
+        data = {"playlists": [playlist_id]}
         return self._perform_request('PUT', endpoint, json=data)
 
-def sizeof_fmt(num, suffix='B'):
-    """Convert file size to a readable format."""
-    for unit in ['','K','M','G','T','P','E','Z']:
-        if abs(num) < 1024.0:
-            return f"{num:3.1f}{unit}{suffix}"
-        num /= 1024.0
-    return f"{num:.1f}Y{suffix}"
+    def clear_playlist_by_name(self, playlist_name):
+        """Clears the existing AzuraCast playlist if it exists by name.
+
+        Args:
+            playlist_name (str): Name of the playlist.
+        """
+        playlist = self.get_playlist(playlist_name)
+        if playlist:
+            self.empty_playlist(playlist['id'])
+
+    # def upload_playlist(self, playlist, playlist_name):
+    #     """Uploads tracks to AzuraCast and adds them to the specified playlist.
+
+    #     Args:
+    #         playlist (list): List of track dictionaries.
+    #         playlist_name (str): Name of the playlist.
+    #     """
+    #     known_tracks = self.get_known_tracks()
+
+    #     for track in playlist:
+    #         try:
+    #             file_content = get_emby_file_content(track)
+    #             azuracast_file_path = generate_azuracast_file_path(track)
+
+    #             if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
+    #                 upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
+    #                 track_id = upload_response.get("id")  # Use the proper field from response
+
+    #                 if not track_id:
+    #                     logger.error("Failed to get a valid track ID for '%s'", track['Name'])
+    #                     continue
+
+    #                 logger.info("Uploaded track '%s' to AzuraCast.", track['Name'])
+    #             else:
+    #                 logger.info("Track '%s' already exists in AzuraCast.", track['Name'])
+    #                 track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
+    #                 if not track_id:
+    #                     logger.error("Failed to find existing track ID for '%s'", track['Name'])
+    #                     continue
+
+    #             playlist_info = self.get_playlist(playlist_name)
+    #             if playlist_info:
+    #                 self.add_to_playlist(track_id, playlist_info['id'])
+    #                 logger.info("Added '%s' to '%s' playlist in Azuracast.", track['Name'], playlist_name)
+    #             else:
+    #                 created_playlist = self.create_playlist(playlist_name)
+    #                 self.add_to_playlist(track_id, created_playlist['id'])
+    #                 logger.info("Created and added '%s' to new '%s' playlist in Azuracast.", track['Name'], playlist_name)
+
+    #         except Exception as e:
+    #             logger.error("Failed to process track '%s' for Azuracast: %s", track['Name'], e)
+
+    def _find_azuracast_track_id(self, known_tracks, azuracast_file_path):
+        """Finds the AzuraCast file ID based on the file path.
+
+        Args:
+            known_tracks (list): List of known tracks.
+            azuracast_file_path (str): File path in AzuraCast.
+
+        Returns:
+            str: Track ID if found, None otherwise.
+        """
+        for known_track in known_tracks:
+            if known_track['path'] == azuracast_file_path:
+                return known_track['id']
+        return None
+
+    @staticmethod
+    def _sizeof_fmt(num, suffix='B'):
+        """Converts file size to a readable format.
+
+        Args:
+            num (int): File size in bytes.
+            suffix (str): Suffix for the unit of file size.
+
+        Returns:
+            str: Readable file size format.
+        """
+        for unit in ['','K','M','G','T','P','E','Z']:
+            if abs(num) < 1024.0:
+                return f"{num:3.1f}{unit}{suffix}"
+            num /= 1024.0
+        return f"{num:.1f}Y{suffix}"

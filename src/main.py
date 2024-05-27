@@ -56,18 +56,51 @@ def generate_playlists():
 
     genre_dir, artist_dir, album_dir = ensure_directories_exist(destination)
 
-    manager = PlaylistManager()
-    manager.fetch_tracks()
-    manager.process_tracks()
-    manager.disambiguate_names()
-    manager.write_playlists(genre_dir, artist_dir, album_dir)
-    generate_year_playlists(manager.tracks, destination)
-    generate_decade_playlists(manager.tracks, destination)
+    # Initialize the PlaylistManager and fetch tracks from Emby
+    playlist_manager = PlaylistManager()
+    playlist_manager.fetch_tracks()  # Fetch and set tracks
+
+    # Add tracks and genres to PlaylistManager
+    for track in tqdm(playlist_manager.tracks, desc="Adding tracks and genres"):
+        playlist_manager.add_track(track)
+        for genre in track.get('Genres', []):
+            playlist_manager.add_genre(genre, track['Id'])
+
+    # Process tracks to categorize by genre, artist, and album
+    playlist_manager.process_tracks()
+
+    # Write out playlists to the filesystem
+    playlist_manager.write_playlists(genre_dir, artist_dir, album_dir)
 
     min_radio_duration = 86400  # Example duration for radio playlist in seconds (24 hours)
 
-    manager.generate_and_upload_radio_playlists(min_radio_duration)
-    manager.sync_tracks()
+    azuracast_sync = AzuraCastSync()
+    lastfm = LastFM()
+    radio_generator = RadioPlaylistGenerator(playlist_manager, lastfm, azuracast_sync)
+
+    for time_segment, genres in tqdm(radio_generator.playlists.items(), desc="Generating radio playlists"):
+        playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
+        if not playlist:
+            logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
+            continue
+
+        playlist_name = f"General - {time_segment}"
+        clear_playlist = True  # Clear the playlist initially
+
+        if clear_playlist:
+            azuracast_sync.clear_playlist_by_name(playlist_name)
+
+        azuracast_sync.upload_playlist(playlist, playlist_name)
+
+    logger.info("Playlists generated successfully")
+
+def fetch_tracks_from_emby():
+    """Fetch all audio items with basic metadata from Emby."""
+    all_audio_items = get_emby_data(
+        '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
+        'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
+    )
+    return all_audio_items['Items']  # Ensure correct key for the return value
 
 def ensure_directories_exist(destination):
     """Ensure the required directories exist.
@@ -94,25 +127,100 @@ class PlaylistManager:
     def __init__(self):
         """Initializes PlaylistManager with empty tracks and playlists."""
         self.tracks = []
+        self.track_map = {}  # track_id -> track
+        self.genres = defaultdict(list)  # genre -> list of track_ids
         self.playlists = {'genres': defaultdict(list), 'artists': defaultdict(list), 'albums': defaultdict(list)}
         self.artist_counter = Counter()
         self.album_counter = Counter()
         self.tracks_to_sync = []
 
+    def add_track(self, track):
+        """Adds a track to the PlaylistManager.
+
+        Args:
+            track (dict): Track metadata dictionary.
+
+        Raises:
+            ValueError: If the track does not have an 'Id' field.
+        """
+        if 'Id' not in track:
+            raise ValueError("Track must have an 'Id' field.")
+        self.track_map[track['Id']] = track
+        self.tracks.append(track)  # Ensure tracks are stored for subsequent processing
+
+    def add_genre(self, genre, track_id):
+        """Associates a track ID with a genre.
+
+        Args:
+            genre (str): Genre name.
+            track_id (str): Track ID.
+        """
+        self.genres[genre].append(track_id)
+
+    def get_tracks_by_genre(self, genre):
+        """Retrieves a list of tracks for a given genre.
+
+        Args:
+            genre (str): Genre name.
+
+        Returns:
+            list: List of track dictionaries.
+        """
+        return [self.track_map[track_id] for track_id in self.genres[genre]]
+
+    def get_track_by_id(self, track_id):
+        """Retrieves a track by its ID.
+
+        Args:
+            track_id (str): Track ID.
+
+        Returns:
+            dict: Track metadata dictionary.
+        """
+        return self.track_map.get(track_id)
+
+    def get_all_genres(self):
+        """Retrieves a list of all genres.
+
+        Returns:
+            list: List of genre names.
+        """
+        return list(self.genres.keys())
+
     def fetch_tracks(self):
-        """Fetch all audio items with basic metadata from Emby."""
-        all_audio_items = get_emby_data(
+        """Fetches all audio items with basic metadata from Emby."""
+        all_audio_items = self._get_emby_data(
             '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
-            'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
+            'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,'
+            'MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,'
+            'TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
         )
-        self.tracks = all_audio_items['Items']
+        self.tracks = all_audio_items.get('Items', [])
+
+    def _get_emby_data(self, endpoint):
+        """Retrieves data from a given Emby API endpoint.
+
+        Args:
+            endpoint (str): The specific API endpoint to fetch data from.
+
+        Returns:
+            dict: The data retrieved from the Emby API.
+        """
+        emby_server_url = os.getenv('EMBY_SERVER_URL')
+        emby_api_key = os.getenv('EMBY_API_KEY')
+        url = f'{emby_server_url}{endpoint}&api_key={emby_api_key}'
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
 
     def process_tracks(self):
-        """Process tracks to categorize them by genre, artist, and album."""
+        """Processes tracks to categorize them by genre, artist, and album."""
         azuracast_sync = AzuraCastSync()
         known_tracks = azuracast_sync.get_known_tracks()
 
         for track in tqdm(self.tracks, desc="Processing tracks"):
+            self.add_track(track)
+
             artist_name = track.get('AlbumArtist', 'Unknown Artist')
             album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
             disk_number = track.get('ParentIndexNumber', 1)
@@ -121,7 +229,7 @@ class PlaylistManager:
             file_path = track.get('Path')
             file_extension = os.path.splitext(file_path)[1]
             azuracast_file_path = f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
-            
+
             if not azuracast_sync.check_file_in_azuracast(known_tracks, azuracast_file_path):
                 self.tracks_to_sync.append((track, azuracast_file_path))
 
@@ -131,6 +239,7 @@ class PlaylistManager:
 
             for genre in track_genres:
                 self.playlists['genres'][genre].append(track)
+                self.add_genre(genre, track['Id'])
 
             artist_id = track.get('MusicBrainzArtistId') or track.get('AlbumArtistId') or track.get('AlbumArtist')
             if artist_id:
@@ -145,7 +254,7 @@ class PlaylistManager:
                 self.album_counter[album_name] += 1
 
     def disambiguate_names(self):
-        """Disambiguate artist and album names if they have the same name."""
+        """Disambiguates artist and album names if they have the same name."""
         disambiguated_artists = {}
         for (artist_id, artist_name), tracks in self.playlists['artists'].items():
             if self.artist_counter[artist_name] > 1:
@@ -165,7 +274,13 @@ class PlaylistManager:
         self.playlists['albums'] = disambiguated_albums
 
     def write_playlists(self, genre_dir, artist_dir, album_dir):
-        """Write the genre, artist, and album playlists to their respective directories."""
+        """Writes the genre, artist, and album playlists to their respective directories.
+
+        Args:
+            genre_dir (str): Directory to save genre playlists.
+            artist_dir (str): Directory to save artist playlists.
+            album_dir (str): Directory to save album playlists.
+        """
         default_date = datetime.min
 
         for genre, tracks in tqdm(self.playlists['genres'].items(), desc="Writing genre playlists"):
@@ -175,7 +290,7 @@ class PlaylistManager:
         for disambiguated_artist, tracks in tqdm(self.playlists['artists'].items(), desc="Writing artist playlists"):
             if tracks:
                 tracks.sort(key=lambda x: (
-                    safe_date_parse(x.get('PremiereDate', ''), default_date),
+                    self._safe_date_parse(x.get('PremiereDate', ''), default_date),
                     x.get('ParentIndexNumber', 0),
                     x.get('IndexNumber', 0)
                 ))
@@ -189,84 +304,25 @@ class PlaylistManager:
                 write_m3u_playlist(album_filename, tracks, album=disambiguated_album)
 
     def sync_tracks(self):
-        """Sync tracks to Azuracast if necessary."""
+        """Syncs tracks to Azuracast if necessary."""
         if os.getenv('AZURACAST_HOST') and os.getenv('AZURACAST_API_KEY') and os.getenv('AZURACAST_STATIONID'):
             sync_tracks_in_batches(self.tracks_to_sync, batch_size=5)
 
-    def generate_and_upload_radio_playlists(self, min_duration):
-        """Generates radio playlists for different time segments and uploads them to AzuraCast."""
-        lastfm = LastFM()
-        azuracast_sync = AzuraCastSync()
+    @staticmethod
+    def _safe_date_parse(date_str, default):
+        """Safely parses a date string (ISO 8601 format). Returns a default value if parsing fails.
 
-        if not azuracast_sync.host or not azuracast_sync.api_key or not azuracast_sync.station_id:
-            logger.error("AzuraCast environment settings are missing. Skipping playlist upload.")
-            return
+        Args:
+            date_str (str): The date string to parse.
+            default (datetime): The default value to return if parsing fails.
 
-        radio_generator = RadioPlaylistGenerator(self.tracks, lastfm, azuracast_sync)
-        
-        for time_segment, genres in radio_generator.playlists.items():
-            playlist = radio_generator.generate_playlist(genres, min_duration)
-            if not playlist:
-                logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
-                continue
-            
-            playlist_name = f"General - {time_segment}"
-            clear_playlist = True  # Clear the playlist initially
-            
-            if clear_playlist:
-                self._clear_azuracast_playlist(azuracast_sync, playlist_name)
-            
-            self._upload_tracks_to_azuracast(azuracast_sync, playlist, playlist_name)
-
-    def _clear_azuracast_playlist(self, azuracast_sync, playlist_name):
-        """Clears the existing AzuraCast playlist if it exists."""
-        playlist = azuracast_sync.get_playlist(playlist_name)
-        if playlist:
-            azuracast_sync.empty_playlist(playlist['id'])
-
-    def _upload_tracks_to_azuracast(self, azuracast_sync, playlist, playlist_name):
-        """Uploads tracks to AzuraCast and adds them to the specified playlist."""
-        known_tracks = azuracast_sync.get_known_tracks()
-
-        for track in playlist:
-            try:
-                file_content = get_emby_file_content(track)
-                azuracast_file_path = generate_azuracast_file_path(track)
-
-                if not azuracast_sync.check_file_in_azuracast(known_tracks, azuracast_file_path):
-                    upload_response = azuracast_sync.upload_file_to_azuracast(file_content, azuracast_file_path)
-                    track_id = upload_response.get("id")  # Use the proper field from response
-
-                    if not track_id:
-                        logger.error(f"Failed to get a valid track ID for '{track['Name']}'")
-                        continue
-
-                    logger.info(f"Uploaded track '{track['Name']}' to AzuraCast.")
-                else:
-                    logger.info(f"Track '{track['Name']}' already exists in AzuraCast.")
-                    track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
-                    if not track_id:
-                        logger.error(f"Failed to find existing track ID for '{track['Name']}'")
-                        continue
-
-                playlist_info = azuracast_sync.get_playlist(playlist_name)
-                if playlist_info:
-                    azuracast_sync.add_to_playlist(track_id, playlist_info['id'])
-                    logger.info(f"Added '{track['Name']}' to '{playlist_name}' playlist in Azuracast.")
-                else:
-                    created_playlist = azuracast_sync.create_playlist(playlist_name)
-                    azuracast_sync.add_to_playlist(track_id, created_playlist['id'])
-                    logger.info(f"Created and added '{track['Name']}' to new '{playlist_name}' playlist in Azuracast.")
-
-            except Exception as e:
-                logger.error(f"Failed to process track '{track['Name']}' for Azuracast: {e}")
-
-    def _find_azuracast_track_id(self, known_tracks, azuracast_file_path):
-        """Helper method to find the AzuraCast file ID based on the file path."""
-        for known_track in known_tracks:
-            if known_track['path'] == azuracast_file_path:
-                return known_track['id']
-        return None
+        Returns:
+            datetime: The parsed date or the default value if parsing fails.
+        """
+        try:
+            return parse(date_str).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            return default
 
 def get_emby_data(endpoint):
     """Retrieve data from given Emby API endpoint.
@@ -595,6 +651,22 @@ def generate_azuracast_file_path(track):
     file_extension = os.path.splitext(file_path)[1]
     
     return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
+
+def initialize_playlist_manager():
+    """Initialize PlaylistManager with tracks and genres from Emby data."""
+    playlist_manager = PlaylistManager()
+    emby_tracks = fetch_tracks_from_emby()
+    
+    # Add tracks to PlaylistManager
+    for track in emby_tracks:
+        playlist_manager.add_track(track)
+    
+    # Generate and add genres. This is where pre-generated genres come in.
+    for track in emby_tracks:
+        for genre in track.get('Genres', []):
+            playlist_manager.add_genre(genre, track['Id'])
+    
+    return playlist_manager
 
 def cron_schedule(cron_expression):
     """Schedule the job based on the cron expression.
