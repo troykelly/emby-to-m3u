@@ -29,7 +29,7 @@ import os
 import shutil
 import logging
 import requests
-import random
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from collections import defaultdict, Counter
 from tqdm import tqdm
@@ -55,7 +55,7 @@ def generate_playlists():
 
     logger.debug("Generating playlists")
 
-    genre_dir, artist_dir, album_dir, year_dir, decade_dir = ensure_directories_exist(destination)
+    genre_dir, artist_dir, album_dir, year_dir, decade_dir, radio_dir = ensure_directories_exist(destination)
 
     # Initialize the PlaylistManager and fetch tracks from Emby
     playlist_manager = PlaylistManager()
@@ -86,20 +86,27 @@ def generate_playlists():
     lastfm = LastFM()
     radio_generator = RadioPlaylistGenerator(playlist_manager, lastfm, azuracast_sync)
 
-    for time_segment, genres in tqdm(radio_generator.playlists.items(), desc="Generating radio playlists"):
-        playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
-        if not playlist:
-            logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
-            continue
+    # Generate radio playlists
+    radio_playlist_items = radio_generator.playlists.items()
+    with tqdm(total=len(radio_playlist_items), desc="Generating radio playlists", unit="playlist") as pbar:
+        for time_segment, genres in radio_playlist_items:
+            pbar.set_description(f"Generating radio playlist for {time_segment}")
+            playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
+            if not playlist:
+                logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
+                continue
 
-        # playlist_name = f"General - {time_segment}"
-        playlist_name = time_segment
-        clear_playlist = True  # Clear the playlist initially
+            # playlist_name = f"General - {time_segment}"
+            playlist_name = time_segment
+            radio_playlist_filename = os.path.join(radio_dir, f'{normalize_filename(playlist_name)}.m3u')
+            write_m3u_playlist(radio_playlist_filename, playlist)
+            clear_playlist = True  # Clear the playlist initially
 
-        if clear_playlist:
-            azuracast_sync.clear_playlist_by_name(playlist_name)
+            if clear_playlist:
+                azuracast_sync.clear_playlist_by_name(playlist_name)
 
-        azuracast_sync.upload_playlist(playlist, playlist_name)
+            azuracast_sync.upload_playlist(playlist, playlist_name)
+            pbar.update(1)
 
     logger.debug("Playlists generated successfully")
 
@@ -117,13 +124,15 @@ def ensure_directories_exist(destination):
     album_dir = os.path.join(destination, '_album')
     year_dir = os.path.join(destination, '_year')
     decade_dir = os.path.join(destination, '_decade')
+    radio_dir = os.path.join(destination, '_radio')
     os.makedirs(destination, exist_ok=True)
     os.makedirs(genre_dir, exist_ok=True)
     os.makedirs(artist_dir, exist_ok=True)
     os.makedirs(album_dir, exist_ok=True)
     os.makedirs(year_dir, exist_ok=True)
     os.makedirs(decade_dir, exist_ok=True)
-    return genre_dir, artist_dir, album_dir, year_dir, decade_dir
+    os.makedirs(radio_dir, exist_ok=True)
+    return genre_dir, artist_dir, album_dir, year_dir, decade_dir, radio_dir
 
 class Track(dict):
     def __init__(self, track_data, playlist_manager):
@@ -194,6 +203,21 @@ class PlaylistManager:
             dict: Track metadata dictionary.
         """
         return self.track_map.get(track_id)
+    
+    def get_track_by_title_and_artist(self, title: str, artist: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a track by its title and artist name.
+
+        Args:
+            title (str): The title of the track.
+            artist (str): The name of the artist.
+
+        Returns:
+            dict: The track metadata dictionary if found, None otherwise.
+        """
+        for track in self.track_map.values():
+            if track.get('Name').lower() == title.lower() and track.get('AlbumArtist').lower() == artist.lower():
+                return track
+        return None    
 
     def get_emby_file_content(self, track_id):
         """Fetches the binary content of a track file from Emby.
@@ -356,12 +380,8 @@ class PlaylistManager:
             album_dir (str): Directory to save album playlists.
         """
         default_date = datetime.min
-        genre_year_dir = os.path.join(genre_dir, '_year')
-        genre_decade_dir = os.path.join(genre_dir, '_decade')
         os.makedirs(year_dir, exist_ok=True)
         os.makedirs(decade_dir, exist_ok=True)
-        os.makedirs(genre_year_dir, exist_ok=True)
-        os.makedirs(genre_decade_dir, exist_ok=True)
 
         for genre, tracks in tqdm(self.playlists['genres'].items(), desc="Writing genre playlists"):
             genre_filename = os.path.join(genre_dir, f'{normalize_filename(genre)}.m3u')
