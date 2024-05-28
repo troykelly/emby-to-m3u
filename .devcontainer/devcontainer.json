@@ -43,7 +43,8 @@
 				"GitHub.copilot-chat",
 				"ZainChen.json",
 				"VisualStudioExptTeam.vscodeintellicode",
-				"VisualStudioExptTeam.vscodeintellicode-completions"
+				"VisualStudioExptTeam.vscodeintellicode-completions",
+				"qwtel.sqlite-viewer"
 			]
 		},
 		"settings": {

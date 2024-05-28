@@ -70,6 +70,7 @@ class RadioPlaylistGenerator:
         similar_tracks = self.lastfm.get_similar_tracks(artist, title)
         if not isinstance(similar_tracks, list) or not all(isinstance(t, dict) for t in similar_tracks):
             logger.warning(f"Unexpected format for similar tracks for {artist} - {title}")
+            logger.warning(similar_tracks)
             return []
         
         return similar_tracks
@@ -168,11 +169,12 @@ class RadioPlaylistGenerator:
                 seen_tracks.add(seed_track['Id'])
                 pbar.update(duration)
 
+                # Loop for fetching similar tracks
                 similar_tracks = self._get_similar_tracks(seed_track)
                 for similar_track in similar_tracks:
                     if not isinstance(similar_track, dict) or 'artist' not in similar_track or 'title' not in similar_track:
                         continue
-                    
+
                     track_artist = similar_track['artist']
                     track_title = similar_track['title']
                     track = self.playlist_manager.get_track_by_title_and_artist(track_title, track_artist)
@@ -187,9 +189,6 @@ class RadioPlaylistGenerator:
                     if random.random() < 0.3:
                         break
 
-                    failure_count += 1
-                    if failure_count >= max_failures:
-                        logger.warning(f"Max failures reached while adding similar tracks. Unable to complete playlist '{playlist_name}'.")
-                        break
+                # We do not update failure_count here to avoid counting every similar tracks loop as a failure
 
         return playlist
