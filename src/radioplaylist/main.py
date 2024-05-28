@@ -153,6 +153,8 @@ class RadioPlaylistGenerator:
 
                 similar_tracks = self._get_similar_tracks(seed_track)
                 for similar_track in similar_tracks:
+                    if similar_track is None:
+                        continue
                     if playlist_duration >= min_duration:
                         break
                     track_artist = similar_track.get('artist')

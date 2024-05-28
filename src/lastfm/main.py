@@ -134,7 +134,17 @@ class LastFM:
                     })
 
             self.cache.set(artist_name, track_name, formatted_similar_tracks, [])
-            return formatted_similar_tracks, []
+            return formatted_similar_tracks
+
+        except pylast.WSError as e:
+            if 'Track not found' in str(e):
+                logger.debug(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            else:
+                logger.warning(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+            return []
 
         except pylast.WSError as e:
             if 'Track not found' in str(e):
