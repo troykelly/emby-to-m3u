@@ -70,16 +70,24 @@ class RadioPlaylistGenerator:
 
         # Initialize the progress bar
         with tqdm(total=min_duration, desc=f"Generating playlist '{playlist_name}'", unit="second") as pbar:
+            # Make sure we don't end up in a failure loop
+            failures = 0
             while playlist_duration < min_duration:
+                if failures >= 20:
+                    logger.error(f"Failed to generate playlist '{playlist_name}' after 10 attempts.")
+                    break
                 genre = random.choice(genres)
                 seed_track = self._get_random_track_by_genre(genre)
 
                 if not seed_track or seed_track['Id'] in seen_tracks:
+                    failures += 1
                     continue
 
                 if self._is_rejected(seed_track, playlist_name):
+                    failures += 1
                     continue
 
+                failures = 0
                 playlist.append(seed_track)
                 duration = seed_track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
                 playlist_duration += duration

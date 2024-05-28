@@ -53,7 +53,7 @@ def generate_playlists():
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
 
-    logger.info("Generating playlists")
+    logger.debug("Generating playlists")
 
     genre_dir, artist_dir, album_dir, year_dir, decade_dir = ensure_directories_exist(destination)
 
@@ -62,16 +62,23 @@ def generate_playlists():
     playlist_manager.fetch_tracks()  # Fetch and set tracks
 
     # Add tracks and genres to PlaylistManager
-    for track in tqdm(playlist_manager.tracks, desc="Adding tracks and genres", unit="track"):
-        playlist_manager.add_track(track)
-        for genre in track.get('Genres', []):
-            playlist_manager.add_genre(genre, track['Id'])
+    with tqdm(total=len(playlist_manager.tracks), desc=f"Adding tracks and genres", unit="track") as pbar:
+        for track in playlist_manager.tracks:
+            # Update tqdm description with track name
+            # track_name = track.get('Name', 'Unknown Track')
+            # track_artist = track.get('AlbumArtist', 'Unknown Artist')
+            # pbar.set_description(f"Adding tracks and genres: {track_name} by {track_artist}")
+            playlist_manager.add_track(track)
+            for genre in track.get('Genres', []):
+                playlist_manager.add_genre(genre, track['Id'])
+            pbar.update(1)
 
     # Process tracks to categorize by genre, artist, and album
     playlist_manager.categorize_tracks()  # Correct method name
 
     # Write out playlists to the filesystem
     playlist_manager.write_playlists(genre_dir, artist_dir, album_dir, year_dir, decade_dir)
+    playlist_manager.generate_genre_markdown(f"{genre_dir}/genres.md")
 
     min_radio_duration = 14400  # Example duration for radio playlist in seconds (eg 86400 for 24 hours)
 
@@ -85,7 +92,8 @@ def generate_playlists():
             logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
             continue
 
-        playlist_name = f"General - {time_segment}"
+        # playlist_name = f"General - {time_segment}"
+        playlist_name = time_segment
         clear_playlist = True  # Clear the playlist initially
 
         if clear_playlist:
@@ -93,7 +101,7 @@ def generate_playlists():
 
         azuracast_sync.upload_playlist(playlist, playlist_name)
 
-    logger.info("Playlists generated successfully")
+    logger.debug("Playlists generated successfully")
 
 def ensure_directories_exist(destination):
     """Ensure the required directories exist.
@@ -429,6 +437,40 @@ class PlaylistManager:
                 except Exception as e:
                     logger.error(f"Failed to upload {file_size} {azuracast_file_path} to Azuracast: {e}")
                     # Continue to next file in case of failure
+                    
+    def generate_genre_markdown(self, file_path):
+        """Generates a markdown file with genres and track counts.
+
+        Args:
+            file_path (str): The path to the output markdown file.
+        """
+        genre_counts = {genre: len(tracks) for genre, tracks in self.playlists['genres'].items()}
+
+        md_content = ["| Genre      | Tracks |", "| ---------- | ------ |"]
+        for genre, count in genre_counts.items():
+            md_content.append(f"| {genre} | {count} |")
+
+        with open(file_path, 'w', encoding='utf-8') as md_file:
+            md_file.write('\n'.join(md_content))
+
+    def generate_artist_markdown(self, file_path):
+        """Generates a markdown file with artists and their track counts.
+
+        Args:
+            file_path (str): The path to the output markdown file.
+        """
+        artist_counts = Counter()
+
+        for track in self.tracks:
+            artist = track.get('AlbumArtist', 'Unknown Artist')
+            artist_counts[artist] += 1
+
+        md_content = ["| Artist      | Tracks |", "| ---------- | ------ |"]
+        for artist, count in artist_counts.items():
+            md_content.append(f"| {artist} | {count} |")
+
+        with open(file_path, 'w', encoding='utf-8') as md_file:
+            md_file.write('\n'.join(md_content))
             
     @staticmethod
     def _safe_date_parse(date_str, default):
