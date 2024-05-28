@@ -165,7 +165,7 @@ def generate_and_upload_playlist(radio_generator, azuracast_sync, time_segment, 
         azuracast_sync.clear_playlist_by_name(playlist_name)
 
     azuracast_sync.upload_playlist(playlist, playlist_name)
-    logger.info(f"Successfully generated and uploaded playlist for {time_segment}")
+    logger.debug(f"Successfully generated and uploaded playlist for {time_segment}")
 
 def generate_playlists_in_batches(radio_generator, azuracast_sync, radio_playlist_items, min_radio_duration, radio_dir, batch_size=5):
     """Generate playlists in parallel batches.

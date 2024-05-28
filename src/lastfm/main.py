@@ -31,6 +31,24 @@ class LastFMCache:
         self.connection = sqlite3.connect(self.cache_file, check_same_thread=False)
         self._init_db()
 
+    def set_network(self, network: pylast.LastFMNetwork) -> None:
+        """Sets a thread-local network context for cache deserialization.
+
+        Args:
+            network: The LastFM network object.
+        """
+        if not hasattr(self, 'local'):
+            self.local = threading.local()
+        self.local.network = network
+
+    def _get_network(self) -> Optional[pylast.LastFMNetwork]:
+        """Gets the thread-local network context for cache deserialization.
+
+        Returns:
+            The LastFM network object if set, otherwise None.
+        """
+        return getattr(self.local, 'network', None)
+
     def _init_db(self) -> None:
         """Initializes the database and creates tables if they don't exist."""
         with self.connection as conn:
@@ -133,7 +151,7 @@ class LastFMCache:
         return pylast.Track(
             artist=track_dict['artist'],
             title=track_dict['title'],
-            network=None  # 'network' will be set later in context
+            network=self._get_network()
         )
 
     def _serialize_artist(self, artist: Dict[str, str]) -> Dict[str, Any]:
@@ -169,7 +187,7 @@ class LastFMCache:
             return None
         return pylast.Artist(
             name=artist_dict['name'],
-            network=None  # 'network' will be set later in context
+            network=self._get_network()
         )
 
 class LastFM:
@@ -186,6 +204,7 @@ class LastFM:
                 password_hash=PASSWORD_HASH
             )
         self.cache = LastFMCache()
+        self.cache.set_network(self.network)  # Set the network for the cache in a thread-safe manner
 
     def get_similar_tracks(self, artist_name: str, track_name: str) -> List[Dict[str, str]]:
         """Gets similar tracks from Last.fm based on a given track.
@@ -234,4 +253,4 @@ class LastFM:
         Args:
             network: The pylast LastFMNetwork instance to set.
         """
-        self.cache.network = network
+        self.cache.set_network(network)  # Set the network for the cache in a thread-safe manner
