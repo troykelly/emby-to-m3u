@@ -156,11 +156,11 @@ class RadioPlaylistGenerator:
                 for similar_track in similar_tracks:
                     if not isinstance(similar_track, dict) or 'artist' not in similar_track or 'title' not in similar_track:
                         continue
-
+                    
                     track_artist = similar_track['artist']
                     track_title = similar_track['title']
                     track = self.playlist_manager.get_track_by_title_and_artist(track_title, track_artist)
-
+                    
                     if track and track['Id'] not in seen_tracks and not self._is_rejected(track, playlist_name):
                         playlist.append(track)
                         duration = track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
@@ -172,4 +172,3 @@ class RadioPlaylistGenerator:
                         break
 
         return playlist
-

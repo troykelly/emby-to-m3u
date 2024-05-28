@@ -120,8 +120,8 @@ class LastFM:
         if cached_result:
             logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
             return [
-                {'artist': track.artist.name, 'title': track.title}
-                for track in cached_result[0]
+                {'artist': track.artist, 'title': track.title}
+                for track in cached_result if track is not None
             ]
 
         try:
