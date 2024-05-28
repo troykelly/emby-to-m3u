@@ -84,14 +84,12 @@ class LastFMCache:
             A list of dictionaries representing similar tracks, or None if not in cache.
         """
         key = self.get_cache_key(artist_name, track_name)
-        with self.connection as conn:
-            cursor = conn.execute('SELECT data FROM cache WHERE key = ?', (key,))
-            row = cursor.fetchone()
-            if row:
-                similar_tracks = json.loads(row[0])
-                similar_tracks = [self._deserialize_track(t) for t in similar_tracks]
-                logger.debug(f"Retrieved from cache: {similar_tracks}")
-                return similar_tracks
+        cursor = self.connection.execute('SELECT data FROM cache WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        if row:
+            similar_tracks = json.loads(row[0])
+            logger.debug(f"Retrieved from cache: {similar_tracks}")
+            return similar_tracks
         return None
 
     def set(self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]]) -> None:
@@ -103,56 +101,16 @@ class LastFMCache:
             similar_tracks: List of similar tracks.
         """
         key = self.get_cache_key(artist_name, track_name)
-        data_json = [self._serialize_track(t) for t in similar_tracks]
+        data_json = json.dumps(similar_tracks)
         try:
-            with self.connection as conn:
-                conn.execute('''
+            with self.connection:
+                self.connection.execute('''
                     INSERT OR REPLACE INTO cache (key, data) 
                     VALUES (?, ?)
-                ''', (key, json.dumps(data_json)))
-                conn.commit()
+                ''', (key, data_json))
+                logger.debug(f"Cached data for {artist_name} - {track_name}")
         except Exception as e:
             logger.error(f"Failed to set cache for {artist_name} - {track_name}: {e}")
-
-    def _serialize_track(self, track: Dict[str, str]) -> Dict[str, Any]:
-        """Serializes a pylast Track object into a JSON serializable dictionary.
-
-        Args:
-            track: The pylast Track object.
-
-        Returns:
-            A dictionary representing the serialized track.
-        """
-        try:
-            serialized = {
-                'title': track['title'],
-                'artist': track['artist'],
-                'url': track.get('url', '')
-            }
-            logger.debug(f"Serialized track: {serialized}")
-            return serialized
-        except KeyError as e:
-            logger.error(f"Failed to serialize track: {track}, error: {e}")
-            return {}
-
-    def _deserialize_track(self, track_dict: Dict[str, Any]) -> Optional[pylast.Track]:
-        """Deserializes a dictionary back into a pylast Track object.
-
-        Args:
-            track_dict: The dictionary representation of a track.
-
-        Returns:
-            A pylast Track object, or None if deserialization fails.
-        """
-        network = self._get_network()
-        if network is None:
-            logger.error("Network context for deserialization is not set.")
-            return None
-        return pylast.Track(
-            artist=track_dict['artist'],
-            title=track_dict['title'],
-            network=network
-        )
 
 class LastFM:
     """Client to interact with the LastFM API using pylast."""
@@ -201,6 +159,8 @@ class LastFM:
                         'artist': similar_track.item.artist.name,
                         'title': similar_track.item.title
                     })
+                else:
+                    logger.warning(f"Unexpected similar track item type: {type(similar_track.item)}")
 
             logger.debug(f"Formatted similar tracks: {formatted_similar_tracks}")
             self.cache.set(artist_name, track_name, formatted_similar_tracks)
