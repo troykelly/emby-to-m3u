@@ -30,6 +30,7 @@ class LastFMCache:
         """
         self.cache_file = cache_file
         self.connection = sqlite3.connect(self.cache_file, check_same_thread=False)
+        self.local = threading.local()
         self._init_db()
 
     def set_network(self, network: pylast.LastFMNetwork) -> None:
@@ -38,8 +39,6 @@ class LastFMCache:
         Args:
             network: The LastFM network object.
         """
-        if not hasattr(self, 'local'):
-            self.local = threading.local()
         self.local.network = network
 
     def _get_network(self) -> Optional[pylast.LastFMNetwork]:
@@ -138,21 +137,25 @@ class LastFMCache:
             logger.error(f"Failed to serialize track: {track}, error: {e}")
             return {}
 
-    def _deserialize_track(self, track_dict: Dict[str, Any]) -> pylast.Track:
+    def _deserialize_track(self, track_dict: Dict[str, Any]) -> Optional[pylast.Track]:
         """Deserializes a dictionary back into a pylast Track object.
 
         Args:
             track_dict: The dictionary representation of a track.
 
         Returns:
-            A pylast Track object.
+            A pylast Track object, or None if deserialization fails.
         """
+        network = self._get_network()
+        if network is None:
+            logger.error("Network context for deserialization is not set.")
+            return None
         if not track_dict:
             return None
         return pylast.Track(
             artist=track_dict['artist'],
             title=track_dict['title'],
-            network=self._get_network()
+            network=network
         )
 
     def _serialize_artist(self, artist: Dict[str, str]) -> Dict[str, Any]:
@@ -175,20 +178,24 @@ class LastFMCache:
             logger.error(f"Failed to serialize artist: {artist}, error: {e}")
             return {}
 
-    def _deserialize_artist(self, artist_dict: Dict[str, Any]) -> pylast.Artist:
+    def _deserialize_artist(self, artist_dict: Dict[str, Any]) -> Optional[pylast.Artist]:
         """Deserializes a dictionary back into a pylast Artist object.
 
         Args:
             artist_dict: The dictionary representation of an artist.
 
         Returns:
-            A pylast Artist object.
+            A pylast Artist object, or None if deserialization fails.
         """
+        network = self._get_network()
+        if network is None:
+            logger.error("Network context for deserialization is not set.")
+            return None
         if not artist_dict:
             return None
         return pylast.Artist(
             name=artist_dict['name'],
-            network=self._get_network()
+            network=network
         )
 
 class LastFM:
@@ -205,7 +212,8 @@ class LastFM:
                 password_hash=PASSWORD_HASH
             )
         self.cache = LastFMCache()
-        self.cache.set_network(self.network)  # Set the network for the cache in a thread-safe manner
+        if self.network:
+            self.cache.set_network(self.network)  # Set the network for the cache in a thread-safe manner
 
     def get_similar_tracks(self, artist_name: str, track_name: str) -> List[Dict[str, str]]:
         """Gets similar tracks from Last.fm based on a given track.
@@ -217,6 +225,10 @@ class LastFM:
         Returns:
             A list of dictionaries representing similar tracks.
         """
+        if self.network is None:
+            logger.error("Network is not initialized")
+            return []
+
         cached_result = self.cache.get(artist_name, track_name)
         if cached_result:
             logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
