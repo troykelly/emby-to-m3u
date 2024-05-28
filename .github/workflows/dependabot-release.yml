@@ -23,8 +23,12 @@ jobs:
     - name: Set condition output
       id: check_condition
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request_target" ]] && { [[ "${{ github.actor }}" == "dependabot[bot]" ]] || [[ "${{ github.actor }}" == "dependabot-preview[bot]" ]]; }; then
-          echo "should_run=true" >> $GITHUB_OUTPUT
+        if [[ "${{ github.event_name }}" == "pull_request_target" ]]; then
+          if [[ "${{ github.actor }}" == "dependabot[bot]" ]] || [[ "${{ github.actor }}" == "dependabot-preview[bot]}" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
         else
           echo "should_run=false" >> $GITHUB_OUTPUT
       shell: bash
