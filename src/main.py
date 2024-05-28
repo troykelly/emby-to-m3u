@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 5
 
 
+# Main program logic to use the new batch processing function
 def generate_playlists():
     """Main function to generate m3u playlists for genres, artists, albums, and years."""
     destination = os.getenv('M3U_DESTINATION')
@@ -68,10 +69,6 @@ def generate_playlists():
     # Add tracks and genres to PlaylistManager
     with tqdm(total=len(playlist_manager.tracks), desc=f"Adding tracks and genres", unit="track") as pbar:
         for track in playlist_manager.tracks:
-            # Update tqdm description with track name
-            # track_name = track.get('Name', 'Unknown Track')
-            # track_artist = track.get('AlbumArtist', 'Unknown Artist')
-            # pbar.set_description(f"Adding tracks and genres: {track_name} by {track_artist}")
             playlist_manager.add_track(track)
             for genre in track.get('Genres', []):
                 playlist_manager.add_genre(genre, track['Id'])
@@ -89,30 +86,10 @@ def generate_playlists():
     azuracast_sync = AzuraCastSync()
     lastfm = LastFM()
     radio_generator = RadioPlaylistGenerator(playlist_manager, lastfm, azuracast_sync)
-    
+
     # Generate radio playlists in batches
     radio_playlist_items = list(radio_generator.playlists.items())
-    generate_playlists_in_batches(radio_generator, azuracast_sync, radio_playlist_items, min_radio_duration, radio_dir, BATCH_SIZE)
-    
-    # with tqdm(total=len(radio_playlist_items), desc="Generating radio playlists", unit="playlist") as pbar:
-    #     for time_segment, genres in radio_playlist_items:
-    #         pbar.set_description(f"Generating radio playlist for {time_segment}")
-    #         playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
-    #         if not playlist:
-    #             logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
-    #             continue
-
-    #         # playlist_name = f"General - {time_segment}"
-    #         playlist_name = time_segment
-    #         radio_playlist_filename = os.path.join(radio_dir, f'{normalize_filename(playlist_name)}.m3u')
-    #         write_m3u_playlist(radio_playlist_filename, playlist)
-    #         clear_playlist = True  # Clear the playlist initially
-
-    #         if clear_playlist:
-    #             azuracast_sync.clear_playlist_by_name(playlist_name)
-
-    #         azuracast_sync.upload_playlist(playlist, playlist_name)
-    #         pbar.update(1)
+    generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, BATCH_SIZE)
 
     logger.debug("Playlists generated successfully")
 
@@ -140,17 +117,21 @@ def ensure_directories_exist(destination):
     os.makedirs(radio_dir, exist_ok=True)
     return genre_dir, artist_dir, album_dir, year_dir, decade_dir, radio_dir
 
-def generate_and_upload_playlist(radio_generator, azuracast_sync, time_segment, genres, min_radio_duration, radio_dir):
+def generate_and_upload_playlist(radio_generator, azuracast_sync, lastfm, time_segment, genres, min_radio_duration, radio_dir):
     """Generates and uploads a single radio playlist.
 
     Args:
         radio_generator (RadioPlaylistGenerator): The playlist generator instance.
         azuracast_sync (AzuraCastSync): The AzuraCast synchronization instance.
+        lastfm (LastFM): The LastFM instance.
         time_segment (str): The time segment for the playlist.
         genres (list): List of genres for the playlist.
         min_radio_duration (int): Minimum duration for the playlists.
         radio_dir (str): The directory to save the playlists.
     """
+    # Ensure thread-local network context is set
+    lastfm.cache.set_network(lastfm.network)
+
     playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
     if not playlist:
         logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
@@ -165,14 +146,15 @@ def generate_and_upload_playlist(radio_generator, azuracast_sync, time_segment, 
         azuracast_sync.clear_playlist_by_name(playlist_name)
 
     azuracast_sync.upload_playlist(playlist, playlist_name)
-    logger.debug(f"Successfully generated and uploaded playlist for {time_segment}")
+    logger.info(f"Successfully generated and uploaded playlist for {time_segment}")
 
-def generate_playlists_in_batches(radio_generator, azuracast_sync, radio_playlist_items, min_radio_duration, radio_dir, batch_size=5):
+def generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, batch_size=5):
     """Generate playlists in parallel batches.
 
     Args:
         radio_generator (RadioPlaylistGenerator): The playlist generator instance.
         azuracast_sync (AzuraCastSync): The AzuraCast synchronization instance.
+        lastfm (LastFM): The LastFM instance.
         radio_playlist_items (list): List of time segments and their genres.
         min_radio_duration (int): Minimum duration for the playlists.
         radio_dir (str): Directory to save the playlists.
@@ -182,7 +164,7 @@ def generate_playlists_in_batches(radio_generator, azuracast_sync, radio_playlis
         futures = []
         for time_segment, genres in radio_playlist_items:
             futures.append(executor.submit(
-                generate_and_upload_playlist, radio_generator, azuracast_sync, time_segment, genres, min_radio_duration, radio_dir
+                generate_and_upload_playlist, radio_generator, azuracast_sync, lastfm, time_segment, genres, min_radio_duration, radio_dir
             ))
         
         with tqdm(total=len(futures), desc="Generating radio playlists", unit="playlist") as pbar:
