@@ -66,7 +66,7 @@ class RadioPlaylistGenerator:
         title = track.get('Name')
         if not artist or not title:
             return []
-        
+
         similar_tracks = self.lastfm.get_similar_tracks(artist, title)
         if not isinstance(similar_tracks, list) or not all(isinstance(t, dict) for t in similar_tracks):
             logger.warning(f"Unexpected format for similar tracks for {artist} - {title}")
@@ -130,6 +130,8 @@ class RadioPlaylistGenerator:
         playlist_duration = 0
         seen_tracks = set()
         genre_rejects = set()
+        max_failures = 20
+        failure_count = 0
 
         with tqdm(total=min_duration, desc=f"Generating playlist '{playlist_name}'", unit="second") as pbar:
             while playlist_duration < min_duration:
@@ -145,12 +147,21 @@ class RadioPlaylistGenerator:
 
                 if not seed_track or seed_track['Id'] in seen_tracks:
                     genre_rejects.add(genre)
+                    failure_count += 1
+                    if failure_count >= max_failures:
+                        logger.warning(f"Max failures reached. Unable to complete playlist '{playlist_name}'.")
+                        break
                     continue
 
                 if self._is_rejected(seed_track, playlist_name):
                     genre_rejects.add(genre)
+                    failure_count += 1
+                    if failure_count >= max_failures:
+                        logger.warning(f"Max failures reached. Unable to complete playlist '{playlist_name}'.")
+                        break
                     continue
 
+                failure_count = 0  # Reset failure count on successful addition
                 playlist.append(seed_track)
                 duration = seed_track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
                 playlist_duration += duration
@@ -165,7 +176,7 @@ class RadioPlaylistGenerator:
                     track_artist = similar_track['artist']
                     track_title = similar_track['title']
                     track = self.playlist_manager.get_track_by_title_and_artist(track_title, track_artist)
-                    
+
                     if track and track['Id'] not in seen_tracks and not self._is_rejected(track, playlist_name):
                         playlist.append(track)
                         duration = track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
@@ -174,6 +185,11 @@ class RadioPlaylistGenerator:
                         pbar.update(duration)
 
                     if random.random() < 0.3:
+                        break
+
+                    failure_count += 1
+                    if failure_count >= max_failures:
+                        logger.warning(f"Max failures reached while adding similar tracks. Unable to complete playlist '{playlist_name}'.")
                         break
 
         return playlist
