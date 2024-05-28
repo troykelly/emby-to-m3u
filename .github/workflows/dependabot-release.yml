@@ -6,7 +6,6 @@ on:
       - opened
       - reopened
       - synchronize
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,8 +14,24 @@ permissions:
   actions: write
 
 jobs:
+  condition-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check_condition.outputs.should_run }}
+    
+    steps:
+    - name: Set condition output
+      id: check_condition
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request_target" && ( "${{ github.actor }}" == "dependabot[bot]" || "${{ github.actor }}" == "dependabot-preview[bot]" ) ]]; then
+          echo "should_run=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_run=false" >> $GITHUB_OUTPUT
+      shell: bash
+
   approve-dependabot-pr:
-    if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]') }}
+    needs: condition-check
+    if: ${{ needs.condition-check.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     
     steps:
@@ -27,11 +42,11 @@ jobs:
       run: |
         gh pr review ${{ github.event.pull_request.number }} --approve
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.PAM_REPO }}
 
   create-release:
-    needs: approve-dependabot-pr
-    if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]') }}
+    needs: [condition-check, approve-dependabot-pr]
+    if: ${{ needs.condition-check.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     
     outputs:
@@ -49,24 +64,23 @@ jobs:
         IFS='.' read -r major minor patch <<< "${latest_release#v}"
         new_patch=$((patch+1))
         new_version="v${major}.${minor}.${new_patch}"
-        echo "New version: $new_version"
-        echo "::set-output name=new_version::$new_version"
+        echo "new_version=$new_version" >> $GITHUB_OUTPUT
       
     - name: Create draft release
       id: create_release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAM_REPO }}
       run: |
         gh release create ${{ steps.get_latest_version.outputs.new_version }} -d -t "Release ${{ steps.get_latest_version.outputs.new_version }}" -n "Automated release by GitHub Actions"
 
   approve-release:
-    needs: create-release
-    if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || github.actor == 'dependabot-preview[bot]') }}
+    needs: [condition-check, create-release]
+    if: ${{ needs.condition-check.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
     - name: Publish draft release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAM_REPO }}
       run: |
         gh release edit ${{ needs.create-release.outputs.new_version }} --draft=false
