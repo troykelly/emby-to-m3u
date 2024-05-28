@@ -22,12 +22,12 @@ jobs:
     steps:
     - name: Set condition output
       id: check_condition
+      shell: bash
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request_target" ]] && ([[ "${{ github.actor }}" == "dependabot[bot]" ]] || [[ "${{ github.actor }}" == "dependabot-preview[bot]" ]]); then
+        if [[ "${{ github.event_name }}" == "pull_request_target" && ( "${{ github.actor }}" == "dependabot[bot]" || "${{ github.actor }}" == "dependabot-preview[bot]" ) ]]; then
           echo "should_run=true" >> $GITHUB_OUTPUT
         else
           echo "should_run=false" >> $GITHUB_OUTPUT
-      shell: bash
 
   approve-dependabot-pr:
     needs: condition-check
@@ -39,10 +39,10 @@ jobs:
       uses: actions/checkout@v4
     
     - name: Approve Dependabot PR
-      run: |
-        gh pr review ${{ github.event.pull_request.number }} --approve
       env:
         GH_TOKEN: ${{ secrets.PAM_REPO }}
+      run: |
+        gh pr review ${{ github.event.pull_request.number }} --approve
 
   create-release:
     needs: [condition-check, approve-dependabot-pr]
