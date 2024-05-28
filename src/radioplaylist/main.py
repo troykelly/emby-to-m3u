@@ -73,7 +73,7 @@ class RadioPlaylistGenerator:
             # Make sure we don't end up in a failure loop
             failures = 0
             while playlist_duration < min_duration:
-                if failures >= 10:
+                if failures >= 20:
                     logger.error(f"Failed to generate playlist '{playlist_name}' after 10 attempts.")
                     break
                 genre = random.choice(genres)

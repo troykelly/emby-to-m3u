@@ -256,11 +256,11 @@ class AzuraCastSync:
                     playlist_info = self.get_playlist(playlist_name)
                     if playlist_info:
                         self.add_to_playlist(track_id, playlist_info['id'])
-                        logger.info("Added '%s' to '%s' playlist in Azuracast.", track['Name'], playlist_name)
+                        logger.debug("Added '%s' to '%s' playlist in Azuracast.", track['Name'], playlist_name)
                     else:
                         created_playlist = self.create_playlist(playlist_name)
                         self.add_to_playlist(track_id, created_playlist['id'])
-                        logger.info("Created and added '%s' to new '%s' playlist in Azuracast.", track['Name'], playlist_name)
+                        logger.debug("Created and added '%s' to new '%s' playlist in Azuracast.", track['Name'], playlist_name)
 
                 except Exception as e:
                     logger.error("Failed to process track '%s' for Azuracast: %s", track['Name'], e)
