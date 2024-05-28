@@ -136,7 +136,7 @@ class AzuraCastSync:
         # time.sleep(1)
 
         response = self._perform_request("POST", endpoint, json=data)
-        logger.info("Uploaded file: %s, Response: %s", file_key, response)
+        logger.debug("Uploaded file: %s, Response: %s", file_key, response)
         return response
 
     def get_playlist(self, playlist_name):
@@ -233,24 +233,21 @@ class AzuraCastSync:
 
                     if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
                         file_content = track.download()
-
-                        # Size of the file to upload
-                        total_size = len(file_content)
                         
-                        with tqdm(total=total_size, desc=f"Uploading track '{track['Name']}'", unit='B', unit_scale=True) as tbar:
-                            upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
-                            uploaded_size = len(file_content)
-                            tbar.update(uploaded_size)
-
+                        # Update progress bar description to show current file
+                        pbar.set_description(f"Uploading '{track['Name']}' to playlist '{playlist_name}'")
+                        
+                        upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
+                        
                         track_id = upload_response.get("id")  # Use the proper field from response
 
                         if not track_id:
                             logger.error("Failed to get a valid track ID for '%s'", track['Name'])
                             continue
 
-                        logger.info("Uploaded track '%s' to Azuracast.", track['Name'])
+                        logger.debug("Uploaded track '%s' to Azuracast.", track['Name'])
                     else:
-                        logger.info("Track '%s' already exists in Azuracast.", track['Name'])
+                        logger.debug("Track '%s' already exists in Azuracast.", track['Name'])
                         track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
                         if not track_id:
                             logger.error("Failed to find existing track ID for '%s'", track['Name'])
