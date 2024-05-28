@@ -203,7 +203,7 @@ class LastFM:
 
     def __init__(self) -> None:
         """Initializes the LastFM client with environment variables."""
-        self.network = None
+        self.network: Optional[pylast.LastFMNetwork] = None
         if API_KEY and API_SECRET and USERNAME and PASSWORD_HASH:
             self.network = pylast.LastFMNetwork(
                 api_key=API_KEY, 
@@ -229,23 +229,26 @@ class LastFM:
             logger.error("Network is not initialized")
             return []
 
-        cached_result = self.cache.get(artist_name, track_name)
+        cached_result: Optional[Tuple[List[Dict[str, str]], List[Any]]] = self.cache.get(artist_name, track_name)
         if cached_result:
             logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
-            return cached_result
+            return cached_result[0]  # Return the first item (similar tracks), expected to be a list of dictionaries
 
         try:
-            track = self.network.get_track(artist_name, track_name)
-            similar_tracks = track.get_similar()
+            track: pylast.Track = self.network.get_track(artist_name, track_name)
+            similar_tracks: List[pylast.Track] = track.get_similar()
 
-            formatted_similar_tracks = []
+            formatted_similar_tracks: List[Dict[str, str]] = []
             for similar_track in similar_tracks:
                 if isinstance(similar_track.item, pylast.Track):
                     formatted_similar_tracks.append({
                         'artist': similar_track.item.artist.name,
                         'title': similar_track.item.title
                     })
+                else:
+                    logger.warning(f"Unexpected similar track item type: {type(similar_track.item)}")
 
+            logger.debug(f"Formatted similar tracks: {formatted_similar_tracks}")
             self.cache.set(artist_name, track_name, formatted_similar_tracks, [])
             return formatted_similar_tracks
 
@@ -262,7 +265,7 @@ class LastFM:
 
     def set_network(self, network: pylast.LastFMNetwork) -> None:
         """Sets the network context for cache deserialization.
-        
+
         Args:
             network: The pylast LastFMNetwork instance to set.
         """
