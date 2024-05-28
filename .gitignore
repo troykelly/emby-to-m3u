@@ -164,6 +164,7 @@ cython_debug/
 /m3u
 /llm.md
 /lastfm_cache.db
+/lastfm_cache.db-journal
 
 # macOS General
 .DS_Store
