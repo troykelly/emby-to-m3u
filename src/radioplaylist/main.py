@@ -66,7 +66,8 @@ class RadioPlaylistGenerator:
         title = track.get('Name')
         if not artist or not title:
             return []
-        return self.lastfm.get_similar_tracks(artist, title)[0]
+        similar_tracks = self.lastfm.get_similar_tracks(artist, title)
+        return similar_tracks if similar_tracks else []
 
     def _is_rejected(self, track: Dict[str, Any], playlist_name: str) -> bool:
         """Check if a track should be rejected based on general and specific reject rules."""
@@ -153,13 +154,13 @@ class RadioPlaylistGenerator:
 
                 similar_tracks = self._get_similar_tracks(seed_track)
                 for similar_track in similar_tracks:
-                    if similar_track is None:
+                    if not isinstance(similar_track, dict) or 'artist' not in similar_track or 'title' not in similar_track:
                         continue
-                    if playlist_duration >= min_duration:
-                        break
-                    track_artist = similar_track.get('artist')
-                    track_title = similar_track.get('title')
+
+                    track_artist = similar_track['artist']
+                    track_title = similar_track['title']
                     track = self.playlist_manager.get_track_by_title_and_artist(track_title, track_artist)
+
                     if track and track['Id'] not in seen_tracks and not self._is_rejected(track, playlist_name):
                         playlist.append(track)
                         duration = track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
@@ -171,3 +172,4 @@ class RadioPlaylistGenerator:
                         break
 
         return playlist
+
