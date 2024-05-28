@@ -66,8 +66,13 @@ class RadioPlaylistGenerator:
         title = track.get('Name')
         if not artist or not title:
             return []
+        
         similar_tracks = self.lastfm.get_similar_tracks(artist, title)
-        return similar_tracks if similar_tracks else []
+        if not isinstance(similar_tracks, list) or not all(isinstance(t, dict) for t in similar_tracks):
+            logger.warning(f"Unexpected format for similar tracks for {artist} - {title}")
+            return []
+        
+        return similar_tracks
 
     def _is_rejected(self, track: Dict[str, Any], playlist_name: str) -> bool:
         """Check if a track should be rejected based on general and specific reject rules."""

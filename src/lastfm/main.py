@@ -119,10 +119,7 @@ class LastFM:
         cached_result = self.cache.get(artist_name, track_name)
         if cached_result:
             logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
-            return [
-                {'artist': track.artist, 'title': track.title}
-                for track in cached_result if track is not None
-            ]
+            return cached_result
 
         try:
             track = self.network.get_track(artist_name, track_name)
@@ -136,6 +133,7 @@ class LastFM:
                         'title': similar_track.item.title
                     })
 
+            # Ensure we are storing the formatted similar tracks as expected
             self.cache.set(artist_name, track_name, formatted_similar_tracks, [])
             return formatted_similar_tracks
 
@@ -145,6 +143,7 @@ class LastFM:
             else:
                 logger.warning(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
             return []
+
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
             return []
