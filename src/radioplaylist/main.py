@@ -61,13 +61,22 @@ class RadioPlaylistGenerator:
         return random.choice(tracks_in_genre)
 
     def _get_similar_tracks(self, track: Dict[str, Any]) -> List[Dict[str, str]]:
-        """Retrieve similar tracks from LastFM."""
-        artist = track.get('AlbumArtist')
-        title = track.get('Name')
+        """Retrieve similar tracks using the LastFM client.
+
+        Args:
+            track: The track information dictionary.
+
+        Returns:
+            A list of dictionaries containing similar track information.
+        """
+        artist: Optional[str] = track.get('AlbumArtist')
+        title: Optional[str] = track.get('Name')
         if not artist or not title:
             return []
 
-        similar_tracks = self.lastfm.get_similar_tracks(artist, title)
+        similar_tracks: List[Dict[str, str]] = self.lastfm.get_similar_tracks(artist, title)
+        
+        # Validate the format of the returned similar tracks
         if not isinstance(similar_tracks, list) or not all(isinstance(t, dict) for t in similar_tracks):
             logger.warning(f"Unexpected format for similar tracks for {artist} - {title}")
             logger.warning(similar_tracks)

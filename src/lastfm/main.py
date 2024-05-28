@@ -23,7 +23,7 @@ class LastFMCache:
     """Simple cache to store LastFM responses to minimize API traffic."""
 
     def __init__(self, cache_file: str = 'lastfm_cache.db') -> None:
-        """Initializes the LastFMCache with a SQLite database.
+        """Initializes the LastFMCache with an SQLite database.
 
         Args:
             cache_file: Path to the SQLite database file.
@@ -33,13 +33,16 @@ class LastFMCache:
         self.local = threading.local()
         self._init_db()
 
-    def set_network(self, network: pylast.LastFMNetwork) -> None:
-        """Sets a thread-local network context for cache deserialization.
-
-        Args:
-            network: The LastFM network object.
-        """
-        self.local.network = network
+    def _init_db(self) -> None:
+        """Initializes the database and creates tables if they don't exist."""
+        with self.connection as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS cache (
+                    key TEXT PRIMARY KEY,
+                    data TEXT
+                )
+            ''')
+            conn.commit()
 
     def _get_network(self) -> Optional[pylast.LastFMNetwork]:
         """Gets the thread-local network context for cache deserialization.
@@ -49,17 +52,13 @@ class LastFMCache:
         """
         return getattr(self.local, 'network', None)
 
-    def _init_db(self) -> None:
-        """Initializes the database and creates tables if they don't exist."""
-        with self.connection as conn:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS cache (
-                    key TEXT PRIMARY KEY,
-                    similar_tracks TEXT,
-                    similar_artists TEXT
-                )
-            ''')
-            conn.commit()
+    def set_network(self, network: pylast.LastFMNetwork) -> None:
+        """Sets a thread-local network context for cache deserialization.
+
+        Args:
+            network: The LastFM network object.
+        """
+        self.local.network = network
 
     def get_cache_key(self, artist_name: str, track_name: str) -> str:
         """Generates a unique cache key for the given artist and track.
@@ -74,7 +73,7 @@ class LastFMCache:
         key = f"{artist_name}-{track_name}"
         return hashlib.md5(key.encode('utf-8')).hexdigest()
 
-    def get(self, artist_name: str, track_name: str) -> Optional[Tuple[List[Any], List[Any]]]:
+    def get(self, artist_name: str, track_name: str) -> Optional[List[Dict[str, str]]]:
         """Retrieves cached data for a given artist and track.
 
         Args:
@@ -82,39 +81,38 @@ class LastFMCache:
             track_name: Name of the track.
 
         Returns:
-            A tuple of lists containing similar tracks and similar artists, or None if not in cache.
+            A list of dictionaries representing similar tracks, or None if not in cache.
         """
         key = self.get_cache_key(artist_name, track_name)
         with self.connection as conn:
-            cursor = conn.execute('SELECT similar_tracks, similar_artists FROM cache WHERE key = ?', (key,))
+            cursor = conn.execute('SELECT data FROM cache WHERE key = ?', (key,))
             row = cursor.fetchone()
             if row:
                 similar_tracks = json.loads(row[0])
-                similar_artists = json.loads(row[1])
                 similar_tracks = [self._deserialize_track(t) for t in similar_tracks]
-                similar_artists = [self._deserialize_artist(a) for a in similar_artists]
                 logger.debug(f"Retrieved from cache: {similar_tracks}")
-                return similar_tracks, similar_artists
+                return similar_tracks
         return None
 
-    def set(self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]], similar_artists: List[Dict[str, str]]) -> None:
-        """Caches similar tracks and artists for a given artist and track.
+    def set(self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]]) -> None:
+        """Caches similar tracks for a given artist and track.
 
         Args:
             artist_name: Name of the artist.
             track_name: Name of the track.
             similar_tracks: List of similar tracks.
-            similar_artists: List of similar artists.
         """
         key = self.get_cache_key(artist_name, track_name)
-        similar_tracks_json = [self._serialize_track(t) for t in similar_tracks]
-        similar_artists_json = [self._serialize_artist(a) for a in similar_artists]
-        with self.connection as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO cache (key, similar_tracks, similar_artists) 
-                VALUES (?, ?, ?)
-            ''', (key, json.dumps(similar_tracks_json), json.dumps(similar_artists_json)))
-            conn.commit()
+        data_json = [self._serialize_track(t) for t in similar_tracks]
+        try:
+            with self.connection as conn:
+                conn.execute('''
+                    INSERT OR REPLACE INTO cache (key, data) 
+                    VALUES (?, ?)
+                ''', (key, json.dumps(data_json)))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to set cache for {artist_name} - {track_name}: {e}")
 
     def _serialize_track(self, track: Dict[str, str]) -> Dict[str, Any]:
         """Serializes a pylast Track object into a JSON serializable dictionary.
@@ -150,51 +148,9 @@ class LastFMCache:
         if network is None:
             logger.error("Network context for deserialization is not set.")
             return None
-        if not track_dict:
-            return None
         return pylast.Track(
             artist=track_dict['artist'],
             title=track_dict['title'],
-            network=network
-        )
-
-    def _serialize_artist(self, artist: Dict[str, str]) -> Dict[str, Any]:
-        """Serializes a pylast Artist object into a JSON serializable dictionary.
-
-        Args:
-            artist: The pylast Artist object.
-
-        Returns:
-            A dictionary representing the serialized artist.
-        """
-        try:
-            serialized = {
-                'name': artist['name'],
-                'url': artist.get('url', '')
-            }
-            logger.debug(f"Serialized artist: {serialized}")
-            return serialized
-        except KeyError as e:
-            logger.error(f"Failed to serialize artist: {artist}, error: {e}")
-            return {}
-
-    def _deserialize_artist(self, artist_dict: Dict[str, Any]) -> Optional[pylast.Artist]:
-        """Deserializes a dictionary back into a pylast Artist object.
-
-        Args:
-            artist_dict: The dictionary representation of an artist.
-
-        Returns:
-            A pylast Artist object, or None if deserialization fails.
-        """
-        network = self._get_network()
-        if network is None:
-            logger.error("Network context for deserialization is not set.")
-            return None
-        if not artist_dict:
-            return None
-        return pylast.Artist(
-            name=artist_dict['name'],
             network=network
         )
 
@@ -203,12 +159,12 @@ class LastFM:
 
     def __init__(self) -> None:
         """Initializes the LastFM client with environment variables."""
-        self.network = None
+        self.network: Optional[pylast.LastFMNetwork] = None
         if API_KEY and API_SECRET and USERNAME and PASSWORD_HASH:
             self.network = pylast.LastFMNetwork(
-                api_key=API_KEY, 
-                api_secret=API_SECRET, 
-                username=USERNAME, 
+                api_key=API_KEY,
+                api_secret=API_SECRET,
+                username=USERNAME,
                 password_hash=PASSWORD_HASH
             )
         self.cache = LastFMCache()
@@ -246,7 +202,8 @@ class LastFM:
                         'title': similar_track.item.title
                     })
 
-            self.cache.set(artist_name, track_name, formatted_similar_tracks, [])
+            logger.debug(f"Formatted similar tracks: {formatted_similar_tracks}")
+            self.cache.set(artist_name, track_name, formatted_similar_tracks)
             return formatted_similar_tracks
 
         except pylast.WSError as e:
@@ -262,7 +219,7 @@ class LastFM:
 
     def set_network(self, network: pylast.LastFMNetwork) -> None:
         """Sets the network context for cache deserialization.
-        
+
         Args:
             network: The pylast LastFMNetwork instance to set.
         """
