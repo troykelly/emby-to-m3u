@@ -4,6 +4,7 @@ import logging
 import json
 import hashlib
 import sqlite3
+import threading
 from typing import List, Dict, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
