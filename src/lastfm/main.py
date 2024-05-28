@@ -3,6 +3,7 @@ import pylast
 import logging
 import json
 import hashlib
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -113,29 +114,33 @@ class LastFM:
         
         self.cache = LastFMCache()
 
-    def get_similar_tracks(self, artist_name, track_name):
+    def get_similar_tracks(self, artist_name: str, track_name: str) -> List[Dict[str, str]]:
         """Get similar tracks from Last.fm based on a given track."""
         cached_result = self.cache.get(artist_name, track_name)
         if cached_result:
             logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
             return cached_result
-        
+
         try:
-            artist = self.network.get_artist(artist_name)
             track = self.network.get_track(artist_name, track_name)
-
             similar_tracks = track.get_similar()
-            similar_artists = artist.get_similar()
 
-            self.cache.set(artist_name, track_name, similar_tracks, similar_artists)
-            return similar_tracks, similar_artists
+            formatted_similar_tracks = []
+            for similar_track in similar_tracks:
+                if isinstance(similar_track.item, pylast.Track):
+                    formatted_similar_tracks.append({
+                        'artist': similar_track.item.artist.name,
+                        'title': similar_track.item.title
+                    })
+
+            self.cache.set(artist_name, track_name, formatted_similar_tracks, [])
+            return formatted_similar_tracks, []
 
         except pylast.WSError as e:
-            # If error is "Track not found" output debug, otherwise output a warning
             if 'Track not found' in str(e):
                 logger.debug(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
             else:
-                logger.warn(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+                logger.warning(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
             return [], []
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
