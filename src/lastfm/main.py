@@ -56,7 +56,7 @@ class LastFMCache:
         key = f"{artist_name}-{track_name}"
         return hashlib.md5(key.encode('utf-8')).hexdigest()
 
-    def get(self, artist_name: str, track_name: str) -> Optional[Tuple[List[pylast.Track], List[pylast.Artist]]]:
+    def get(self, artist_name: str, track_name: str) -> Optional[Tuple[List[Any], List[Any]]]:
         """Retrieves cached data for a given artist and track.
 
         Args:
@@ -73,14 +73,13 @@ class LastFMCache:
             if row:
                 similar_tracks = json.loads(row[0])
                 similar_artists = json.loads(row[1])
-                similar_tracks = [self._deserialize_track(t) for t in similar_tracks if t]
-                similar_artists = [self._deserialize_artist(a) for a in similar_artists if a]
-                logger.debug(f"Deserialized tracks: {similar_tracks}")
-                logger.debug(f"Deserialized artists: {similar_artists}")
+                similar_tracks = [self._deserialize_track(t) for t in similar_tracks]
+                similar_artists = [self._deserialize_artist(a) for a in similar_artists]
+                logger.debug(f"Retrieved from cache: {similar_tracks}")
                 return similar_tracks, similar_artists
         return None
 
-    def set(self, artist_name: str, track_name: str, similar_tracks: List[pylast.Track], similar_artists: List[pylast.Artist]) -> None:
+    def set(self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]], similar_artists: List[Dict[str, str]]) -> None:
         """Caches similar tracks and artists for a given artist and track.
 
         Args:
@@ -90,8 +89,8 @@ class LastFMCache:
             similar_artists: List of similar artists.
         """
         key = self.get_cache_key(artist_name, track_name)
-        similar_tracks_json = [self._serialize_track(t) for t in similar_tracks if t]
-        similar_artists_json = [self._serialize_artist(a) for a in similar_artists if a]
+        similar_tracks_json = [self._serialize_track(t) for t in similar_tracks]
+        similar_artists_json = [self._serialize_artist(a) for a in similar_artists]
         with self.connection as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO cache (key, similar_tracks, similar_artists) 
@@ -99,91 +98,79 @@ class LastFMCache:
             ''', (key, json.dumps(similar_tracks_json), json.dumps(similar_artists_json)))
             conn.commit()
 
-    def _serialize_track(self, track: pylast.Track) -> Optional[Dict[str, Any]]:
+    def _serialize_track(self, track: Dict[str, str]) -> Dict[str, Any]:
         """Serializes a pylast Track object into a JSON serializable dictionary.
 
         Args:
             track: The pylast Track object.
 
         Returns:
-            A dictionary representing the serialized track, or None if serialization fails.
+            A dictionary representing the serialized track.
         """
         try:
             serialized = {
-                'title': track.title,
-                'artist': track.artist.name,
-                'url': track.url
+                'title': track['title'],
+                'artist': track['artist'],
+                'url': track.get('url', '')
             }
             logger.debug(f"Serialized track: {serialized}")
             return serialized
-        except AttributeError as e:
+        except KeyError as e:
             logger.error(f"Failed to serialize track: {track}, error: {e}")
-            return None
+            return {}
 
-    def _deserialize_track(self, track_dict: Dict[str, Any]) -> Optional[pylast.Track]:
+    def _deserialize_track(self, track_dict: Dict[str, Any]) -> pylast.Track:
         """Deserializes a dictionary back into a pylast Track object.
 
         Args:
             track_dict: The dictionary representation of a track.
 
         Returns:
-            A pylast Track object, or None if deserialization fails.
+            A pylast Track object.
         """
         if not track_dict:
             return None
-        try:
-            track = pylast.Track(
-                artist=track_dict['artist'],
-                title=track_dict['title'],
-                network=None  # 'network' will be set later in context
-            )
-            logger.debug(f"Deserialized track: {track}")
-            return track
-        except KeyError as e:
-            logger.error(f"Failed to deserialize track dictionary: {track_dict}, error: {e}")
-            return None
+        return pylast.Track(
+            artist=track_dict['artist'],
+            title=track_dict['title'],
+            network=None  # 'network' will be set later in context
+        )
 
-    def _serialize_artist(self, artist: pylast.Artist) -> Optional[Dict[str, Any]]:
+    def _serialize_artist(self, artist: Dict[str, str]) -> Dict[str, Any]:
         """Serializes a pylast Artist object into a JSON serializable dictionary.
 
         Args:
             artist: The pylast Artist object.
 
         Returns:
-            A dictionary representing the serialized artist, or None if serialization fails.
+            A dictionary representing the serialized artist.
         """
         try:
             serialized = {
-                'name': artist.name,
-                'url': artist.url
+                'name': artist['name'],
+                'url': artist.get('url', '')
             }
             logger.debug(f"Serialized artist: {serialized}")
             return serialized
-        except AttributeError as e:
+        except KeyError as e:
             logger.error(f"Failed to serialize artist: {artist}, error: {e}")
-            return None
+            return {}
 
-    def _deserialize_artist(self, artist_dict: Dict[str, Any]) -> Optional[pylast.Artist]:
+    def _deserialize_artist(self, artist_dict: Dict[str, Any]) -> pylast.Artist:
         """Deserializes a dictionary back into a pylast Artist object.
 
         Args:
             artist_dict: The dictionary representation of an artist.
 
         Returns:
-            A pylast Artist object, or None if deserialization fails.
+            A pylast Artist object.
         """
         if not artist_dict:
             return None
-        try:
-            artist = pylast.Artist(
-                name=artist_dict['name'],
-                network=None  # 'network' will be set later in context
-            )
-            logger.debug(f"Deserialized artist: {artist}")
-            return artist
-        except KeyError as e:
-            logger.error(f"Failed to deserialize artist dictionary: {artist_dict}, error: {e}")
-            return None
+        return pylast.Artist(
+            name=artist_dict['name'],
+            network=None  # 'network' will be set later in context
+        )
 
 class LastFM:
     """Client to interact with the LastFM API using pylast."""
