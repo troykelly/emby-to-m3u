@@ -86,22 +86,27 @@ def generate_playlists():
     lastfm = LastFM()
     radio_generator = RadioPlaylistGenerator(playlist_manager, lastfm, azuracast_sync)
 
-    for time_segment, genres in tqdm(radio_generator.playlists.items(), desc="Generating radio playlists"):
-        playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
-        if not playlist:
-            logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
-            continue
+    # Generate radio playlists
+    radio_playlist_items = radio_generator.playlists.items()
+    with tqdm(total=len(radio_playlist_items), desc="Generating radio playlists", unit="playlist") as pbar:
+        for time_segment, genres in radio_playlist_items:
+            pbar.set_description(f"Generating radio playlist for {time_segment}")
+            playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
+            if not playlist:
+                logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
+                continue
 
-        # playlist_name = f"General - {time_segment}"
-        playlist_name = time_segment
-        radio_playlist_filename = os.path.join(radio_dir, f'{normalize_filename(playlist_name)}.m3u')
-        write_m3u_playlist(radio_playlist_filename, playlist)
-        clear_playlist = True  # Clear the playlist initially
+            # playlist_name = f"General - {time_segment}"
+            playlist_name = time_segment
+            radio_playlist_filename = os.path.join(radio_dir, f'{normalize_filename(playlist_name)}.m3u')
+            write_m3u_playlist(radio_playlist_filename, playlist)
+            clear_playlist = True  # Clear the playlist initially
 
-        if clear_playlist:
-            azuracast_sync.clear_playlist_by_name(playlist_name)
+            if clear_playlist:
+                azuracast_sync.clear_playlist_by_name(playlist_name)
 
-        azuracast_sync.upload_playlist(playlist, playlist_name)
+            azuracast_sync.upload_playlist(playlist, playlist_name)
+            pbar.update(1)
 
     logger.debug("Playlists generated successfully")
 
