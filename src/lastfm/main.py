@@ -119,7 +119,10 @@ class LastFM:
         cached_result = self.cache.get(artist_name, track_name)
         if cached_result:
             logger.debug(f"Cache hit for Artist: {artist_name}, Track: {track_name}")
-            return cached_result
+            return [
+                {'artist': track.artist.name, 'title': track.title}
+                for track in cached_result[0]
+            ]
 
         try:
             track = self.network.get_track(artist_name, track_name)
@@ -145,16 +148,6 @@ class LastFM:
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
             return []
-
-        except pylast.WSError as e:
-            if 'Track not found' in str(e):
-                logger.debug(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
-            else:
-                logger.warning(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
-            return [], []
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
-            return [], []
     
     def set_network(self, network):
         """Set the network context for cache deserialization."""
