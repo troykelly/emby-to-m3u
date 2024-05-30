@@ -54,7 +54,6 @@ def apply_replaygain(file_path: str, gain: float, peak: float) -> None:
         peak: The ReplayGain track peak value.
     """
     audio_file = MutagenFile(file_path, easy=True)
-    tag_modified = False
 
     if audio_file is None:
         raise RuntimeError("Failed to load audio file with mutagen.")
@@ -62,24 +61,24 @@ def apply_replaygain(file_path: str, gain: float, peak: float) -> None:
     if file_path.lower().endswith(".mp3"):
         if not isinstance(audio_file, ID3):
             audio_file.add_tags()
-        for tag in audio_file.tags:
-            if tag.FrameID == "TXXX" and tag.desc == "replaygain_track_gain":
-                tag.text[0] = str(gain)
-                tag_modified = True
-            elif tag.FrameID == "TXXX" and tag.desc == "replaygain_track_peak":
-                tag.text[0] = str(peak)
-                tag_modified = True
-        if not tag_modified:
+        existing_gain_tag = next((tag for tag in audio_file.tags if tag.FrameID == "TXXX" and tag.desc == "replaygain_track_gain"), None)
+        existing_peak_tag = next((tag for tag in audio_file.tags if tag.FrameID == "TXXX" and tag.desc == "replaygain_track_peak"), None)
+        if existing_gain_tag:
+            existing_gain_tag.text[0] = str(gain)
+        else:
             audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_gain", text=str(gain)))
+        if existing_peak_tag:
+            existing_peak_tag.text[0] = str(peak)
+        else:
             audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_peak", text=str(peak)))
-        audio_file.save()
     elif file_path.lower().endswith(".flac"):
         audio_file = FLAC(file_path)
         audio_file["replaygain_track_gain"] = str(gain)
         audio_file["replaygain_track_peak"] = str(peak)
-        audio_file.save()
     else:
         raise NotImplementedError(f"ReplayGain application for {file_path} not implemented.")
+
+    audio_file.save()
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     """Process ReplayGain for a given audio file content.
