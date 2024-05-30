@@ -7,7 +7,11 @@ WORKDIR /app
 
 # Install dependencies and create a virtual environment
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy application code and default configuration with proper ownership
 COPY --chown=m3u:m3u src /app/src
