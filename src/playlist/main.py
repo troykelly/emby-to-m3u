@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from tqdm import tqdm
 from dateutil.parser import parse
+from util.main import normalize_filename, write_m3u_playlist
 
 if TYPE_CHECKING:
     from track.main import Track  # Avoids direct import at the module level
@@ -98,14 +99,16 @@ class PlaylistManager:
 
     def fetch_tracks(self) -> None:
         """Fetches all audio items with basic metadata from Emby."""
-        all_audio_items = self._get_emby_data(
-            '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
-            'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,'
-            'MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,'
-            'TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
-        )
-        from track.main import Track  # Local import to avoid circular dependency
-        self.tracks = [Track(item, self) for item in all_audio_items.get('Items', [])]
+        with tqdm(total=1, desc="Fetching all tracks from Emby", unit="list") as list_prog:
+            all_audio_items = self._get_emby_data(
+                '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
+                'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,'
+                'MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,'
+                'TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
+            )
+            list_prog.update(1)
+            from track.main import Track  # Local import to avoid circular dependency
+            self.tracks = [Track(item, self) for item in all_audio_items.get('Items', [])]
 
     def _get_emby_data(self, endpoint: str) -> Dict[str, Any]:
         """Retrieves data from a given Emby API endpoint.
@@ -208,7 +211,7 @@ class PlaylistManager:
 
     def write_playlists(
         self, genre_dir: str, artist_dir: str, album_dir: str, 
-        year_dir: str, decade_dir: str, write_m3u_playlist: callable, normalize_filename: callable
+        year_dir: str, decade_dir: str
     ) -> None:
         """Writes the genre, artist, album, year, and decade playlists to their respective directories.
 

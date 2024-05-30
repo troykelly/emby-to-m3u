@@ -19,6 +19,7 @@ class Track(dict):
         """
         super().__init__(track_data)
         self.playlist_manager = playlist_manager
+        self.azuracast_file_id = None
 
     def download(self) -> bytes:
         """Downloads the track's binary content from the Emby server.
