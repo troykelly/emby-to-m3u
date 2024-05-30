@@ -47,8 +47,9 @@ from time import sleep
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 3
+VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
+BATCH_SIZE = 3
 
 def generate_playlists() -> None:
     """Main function to generate m3u playlists for genres, artists, albums, and years."""

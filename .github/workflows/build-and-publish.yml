@@ -59,12 +59,11 @@ jobs:
         echo "::set-output name=minor::$minor"
         echo "::set-output name=patch::$patch"
 
-    - name: Extract repository name
-      id: extract_repo
+    - name: Embed version number in release files
+      if: github.event_name == 'release'
       run: |
-        REPO_NAME=$(echo "${{ github.repository }}" | awk -F/ '{print $2}')
-        echo "::set-output name=repo_name::$REPO_NAME"
-
+        sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${{ steps.version.outputs.version }}\"/" src/main.py
+    
     - name: Build and push Docker image (main or release)
       uses: docker/build-push-action@v5
       with:
@@ -82,3 +81,21 @@ jobs:
           ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.major) || '' }}
           ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}.{3}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
           ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('ghcr.io/{0}/{1}:edge', github.repository_owner, steps.extract_repo.outputs.repo_name) || '' }}
+    build-args: |
+      VERSION=${{ steps.version.outputs.version }}
+
+    - name: Create release artifact
+      if: github.event_name == 'release'
+      run: |
+        mkdir -p release
+        cp -r src release/
+        cd release
+        tar -czf ../release_${{ steps.version.outputs.version }}.tar.gz .
+        
+    - name: Upload release artifact
+      if: github.event_name == 'release'
+      uses: actions/upload-artifact@v2
+      with:
+        name: release_${{ steps.version.outputs.version }}.tar.gz
+        path: release_${{ steps.version.outputs.version }}.tar.gz
+        retention-days: 5
