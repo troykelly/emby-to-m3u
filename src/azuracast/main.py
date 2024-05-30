@@ -104,22 +104,35 @@ class AzuraCastSync:
         """Retrieves a list of all known tracks in Azuracast.
 
         Returns:
-            list: List of file paths known to Azuracast.
+            list: List of dictionaries containing the known files metadata.
         """
-        endpoint = f"/station/{self.station_id}/files/list"
-        return self._perform_request("GET", endpoint)
+        endpoint = f"/station/{self.station_id}/files"
+        response = self._perform_request("GET", endpoint)
+        return response.json()  # Ensure the JSON content is returned
 
-    def check_file_in_azuracast(self, known_tracks, file_path):
-        """Checks if a file is in the list of known tracks.
+    def check_file_in_azuracast(self, known_tracks, track):
+        """Checks if a file with the same metadata exists in Azuracast.
 
         Args:
-            known_tracks (list): List of known file paths.
-            file_path (str): The path of the file to check.
+            known_tracks (list): List of known file metadata.
+            track (Track): The track object to check.
 
         Returns:
             bool: True if the file is known to Azuracast, False otherwise.
         """
-        return file_path in known_tracks
+        artist = track.get('AlbumArtist')
+        album = track.get('Album')
+        title = track.get('Name')
+        length = str(track.get('RunTimeTicks', 0) // 10000000)  # Convert ticks to seconds
+
+        for known_track in known_tracks:
+            if (known_track.get('artist') == artist 
+                    and known_track.get('album') == album 
+                    and known_track.get('title') == title 
+                    and known_track.get('length') == length):
+                track.azuracast_file_id = known_track['id']
+                return True
+        return False
 
     def upload_file_to_azuracast(self, file_content, file_key):
         """Uploads a file to Azuracast.
@@ -220,7 +233,7 @@ class AzuraCastSync:
         return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
 
     def upload_file_and_set_track_id(self, track):
-        """Upload file to AzuraCast and set the track's azuracast_file_id.
+        """Upload file to Azuracast and set the track's azuracast_file_id.
 
         Args:
             track: Track instance to upload.
@@ -229,32 +242,31 @@ class AzuraCastSync:
             bool: True if file was successfully uploaded or already exists in Azuracast, False otherwise.
         """
         try:
-            azuracast_file_path = self.generate_file_path(track)
             known_tracks = self.get_known_tracks()
 
-            if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
+            if not self.check_file_in_azuracast(known_tracks, track):
                 # File does not exist, proceed with upload
                 file_content = track.download()
-                upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
+                upload_response = self.upload_file_to_azuracast(file_content, track.get('Path'))
                 track.azuracast_file_id = upload_response.get("id")
                 logger.debug("Uploaded file '%s' to Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
             else:
                 # File exists, check if it has ReplayGain metadata
-                track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
-                track.azuracast_file_id = track_id
-
-                file_content = self.download_file_from_azuracast(track_id)
+                file_content = self.download_file_from_azuracast(track.azuracast_file_id)
                 content = BytesIO(file_content)
 
                 if not has_replaygain_metadata(content, os.path.splitext(track['Path'])[1]):
                     logger.info("File '%s' does not have ReplayGain metadata, deleting it from Azuracast.", track['Name'])
-                    self.delete_file_from_azuracast(track_id)
+                    self.delete_file_from_azuracast(track.azuracast_file_id)
 
                     # Re-analyze and upload with ReplayGain metadata
                     new_file_content = track.download()
-                    upload_response = self.upload_file_to_azuracast(new_file_content, azuracast_file_path)
-                    track.azuracast_file_id = upload_response.get("id")
-                    logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                    upload_response = self.upload_file_to_azuracast(new_file_content, track.get('Path'))
+                    if upload_response and "id" in upload_response:
+                        track.azuracast_file_id = upload_response["id"]
+                        logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                    else:
+                        logger.error("Failed to upload file '%s' after deletion", track['Name'])
                 else:
                     logger.debug("File '%s' already exists in Azuracast with ID '%s' and has ReplayGain metadata", track['Name'], track.azuracast_file_id)
 
@@ -283,7 +295,11 @@ class AzuraCastSync:
             track_id (str): ID of the file to delete.
         """
         endpoint = f"/station/{self.station_id}/file/{track_id}"
-        self._perform_request("DELETE", endpoint)
+        response = self._perform_request("DELETE", endpoint)
+        if response.status_code == 204:
+            logger.debug("Successfully deleted file with ID '%s' from Azuracast", track_id)
+        else:
+            logger.error("Failed to delete file with ID '%s' from Azuracast", track_id)
 
     def upload_playlist(self, playlist):
         """Uploads tracks to AzuraCast and sets their azuracast_file_id without updating the playlist.
