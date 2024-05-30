@@ -49,6 +49,8 @@ jobs:
           exit 1
         fi
 
+        sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${version}\"/" src/main.py
+
         echo "::set-output name=version::$version"
         
         major=$(echo $version | cut -d. -f1)
@@ -59,11 +61,12 @@ jobs:
         echo "::set-output name=minor::$minor"
         echo "::set-output name=patch::$patch"
 
-    - name: Embed version number in release files
-      if: github.event_name == 'release'
+    - name: Extract repository name
+      id: extract_repo
       run: |
-        sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${{ steps.version.outputs.version }}\"/" src/main.py
-    
+        REPO_NAME=$(echo "${{ github.repository }}" | awk -F/ '{print $2}')
+        echo "::set-output name=repo_name::$REPO_NAME"
+
     - name: Build and push Docker image (main or release)
       uses: docker/build-push-action@v5
       with:
@@ -81,8 +84,6 @@ jobs:
           ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.major) || '' }}
           ${{ github.event_name == 'release' && github.event.release.tag_name != '' && format('ghcr.io/{0}/{1}:{2}.{3}', github.repository_owner, steps.extract_repo.outputs.repo_name, steps.version.outputs.major, steps.version.outputs.minor) || '' }}
           ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('ghcr.io/{0}/{1}:edge', github.repository_owner, steps.extract_repo.outputs.repo_name) || '' }}
-    build-args: |
-      VERSION=${{ steps.version.outputs.version }}
 
     - name: Create release artifact
       if: github.event_name == 'release'
