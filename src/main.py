@@ -312,6 +312,9 @@ def cron_schedule(cron_expression: str) -> None:
 
 
 if __name__ == "__main__":
+    if VERSION != "__VERSION__":
+        logging.info(f"M3U to AzureCase Version {VERSION}")
+        
     cron_expression = os.getenv('M3U_CRON')
 
     if cron_expression:
