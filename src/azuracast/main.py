@@ -69,16 +69,16 @@ class AzuraCastSync:
                 session = self._get_session()
                 logger.debug("Attempt %d: Making request to %s", attempt, url)
                 response = session.request(
-                    method, 
-                    url, 
-                    headers=headers, 
-                    params=params, 
-                    data=data, 
-                    json=json, 
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
+                    data=data,
+                    json=json,
                     timeout=timeout
                 )
                 response.raise_for_status()
-                
+
                 if response.status_code == 413:
                     logger.warning("Attempt %d: Request to %s failed due to size limit. Retrying...", attempt, url)
                     time.sleep(2 ** attempt)
@@ -139,12 +139,8 @@ class AzuraCastSync:
         file_size = self._sizeof_fmt(len(file_content))
         logger.debug("Uploading file: %s, Size: %s", file_key, file_size)
 
-        # Introduce a delay to avoid rate limiting issues
-        # time.sleep(1)
-
         response = self._perform_request("POST", endpoint, json=data)
-        logger.debug("Uploaded file: %s, Response: %s", file_key, response)
-        return response
+        return response.json()  # We return the JSON content of the response
 
     def get_playlist(self, playlist_name):
         """Retrieves a playlist by name from Azuracast.
@@ -295,11 +291,11 @@ class AzuraCastSync:
         Args:
             playlist (list): List of Track instances to upload.
         """
-        with tqdm(total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track") as pbar:
+        with tqdm(total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track") as pbar_upload_playlist:
             for track in playlist:
                 if not self.upload_file_and_set_track_id(track):
                     logger.warning(f"Failed to upload '{track['Name']}' to Azuracast")
-                pbar.update(1)
+                pbar_upload_playlist.update(1)
         return True
 
     def sync_playlist(self, playlist_name, playlist):
