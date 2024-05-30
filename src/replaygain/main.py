@@ -54,22 +54,32 @@ def apply_replaygain(file_path: str, gain: float, peak: float) -> None:
         peak: The ReplayGain track peak value.
     """
     audio_file = MutagenFile(file_path, easy=True)
+    tag_modified = False
+
     if audio_file is None:
         raise RuntimeError("Failed to load audio file with mutagen.")
 
     if file_path.lower().endswith(".mp3"):
         if not isinstance(audio_file, ID3):
             audio_file.add_tags()
-        audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_gain", text=str(gain)))
-        audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_peak", text=str(peak)))
+        for tag in audio_file.tags:
+            if tag.FrameID == "TXXX" and tag.desc == "replaygain_track_gain":
+                tag.text[0] = str(gain)
+                tag_modified = True
+            elif tag.FrameID == "TXXX" and tag.desc == "replaygain_track_peak":
+                tag.text[0] = str(peak)
+                tag_modified = True
+        if not tag_modified:
+            audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_gain", text=str(gain)))
+            audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_peak", text=str(peak)))
+        audio_file.save()
     elif file_path.lower().endswith(".flac"):
         audio_file = FLAC(file_path)
         audio_file["replaygain_track_gain"] = str(gain)
         audio_file["replaygain_track_peak"] = str(peak)
+        audio_file.save()
     else:
         raise NotImplementedError(f"ReplayGain application for {file_path} not implemented.")
-
-    audio_file.save()
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     """Process ReplayGain for a given audio file content.
@@ -115,11 +125,11 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     Returns:
         bool: True if ReplayGain metadata is present, False otherwise.
     """
-    content.seek(0)  # Ensure the buffer is at the beginning
+    content.seek(0)
     audio_file = MutagenFile(content, easy=True)
 
     if isinstance(audio_file, ID3):
-        return any(tag in audio_file for tag in ["TXXX:replaygain_track_gain", "TXXX:replaygain_track_peak"])
+        return any(tag.FrameID == "TXXX" and (tag.desc == "replaygain_track_gain" or tag.desc == "replaygain_track_peak") for tag in audio_file.tags)
     elif isinstance(audio_file, FLAC):
         return any(tag in audio_file for tag in ["replaygain_track_gain", "replaygain_track_peak"])
 
