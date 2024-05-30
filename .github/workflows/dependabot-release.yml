@@ -22,10 +22,16 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    
+
     - name: Approve Dependabot PR
       run: |
         gh pr review ${{ github.event.pull_request.number }} --approve
+      env:
+        GH_TOKEN: ${{ secrets.PAM_REPO }}
+
+    - name: Merge Dependabot PR
+      run: |
+        gh pr merge ${{ github.event.pull_request.number }} --merge --delete-branch
       env:
         GH_TOKEN: ${{ secrets.PAM_REPO }}
 
@@ -65,6 +71,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
     - name: Publish draft release
       env:
         GITHUB_TOKEN: ${{ secrets.PAM_REPO }}
