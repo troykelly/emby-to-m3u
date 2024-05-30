@@ -4,13 +4,13 @@ import io
 import os
 import tempfile
 import subprocess
+from io import BytesIO
+from tqdm import tqdm
 from pydub import AudioSegment
 from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, TXXX
 from mutagen.flac import FLAC
-from io import BytesIO
 from typing import Tuple
-from tqdm import tqdm
 
 def calculate_replaygain(file_path: str) -> Tuple[float, float]:
     """Calculate ReplayGain values for an audio file using ffmpeg.
@@ -35,10 +35,10 @@ def calculate_replaygain(file_path: str) -> Tuple[float, float]:
     peak = None
 
     for line in output.split("\n"):
-        if "track gain" in line.lower():
-            gain = float([s for s in line.split() if s.replace('.', '', 1).isdigit()][-1])
-        elif "track peak" in line.lower():
-            peak = float([s for s in line.split() if s.replace('.', '', 1).isdigit()][-1])
+        if " track_gain " in line.lower():
+            gain = float(line.split('=')[-1].strip().split()[0])
+        elif " track_peak " in line.lower():
+            peak = float(line.split('=')[-1].strip().split()[0])
 
     if gain is None or peak is None:
         raise RuntimeError("ReplayGain calculation failed or could not be parsed.")
@@ -57,7 +57,6 @@ def apply_replaygain(file_path: str, gain: float, peak: float) -> None:
     if audio_file is None:
         raise RuntimeError("Failed to load audio file with mutagen.")
 
-    # Add ReplayGain metadata
     if file_path.lower().endswith(".mp3"):
         if not isinstance(audio_file, ID3):
             audio_file.add_tags()
@@ -82,25 +81,27 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     Returns:
         bytes: The binary content of the audio file with ReplayGain metadata.
     """
-    with tqdm(total=100, desc="Analysing replaygain metadata", unit="%") as pbar:
+    with tqdm(total=100, desc="Analysing replaygain metadata", unit="%") as pbar_replaygain:    
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_format}") as temp_audio_file:
             temp_audio_file.write(file_content)
             temp_audio_path = temp_audio_file.name
             
-        pbar.update(25)
+        pbar_replaygain.update(25)            
 
         gain, peak = calculate_replaygain(temp_audio_path)
+        if gain:
+            pbar_replaygain.set_description(f"Applying replaygain metadata: {gain:.2f} dB")
+        pbar_replaygain.update(50)        
         apply_replaygain(temp_audio_path, gain, peak)
-        
-        pbar.update(75)
+        pbar_replaygain.update(15)
 
         with open(temp_audio_path, "rb") as f:
             updated_content = f.read()
             
-        pbar.update(95)
+        pbar_replaygain.update(5)
 
         os.remove(temp_audio_path)  # Clean up temporary file
-        pbar.update(100)
+        pbar_replaygain.update(5)
 
     return updated_content
 
