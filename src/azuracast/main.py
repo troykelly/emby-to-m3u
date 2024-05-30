@@ -5,6 +5,8 @@ from tqdm import tqdm
 from base64 import b64encode
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from io import BytesIO
+from replaygain.main import has_replaygain_metadata
 import time
 
 logger = logging.getLogger(__name__)
@@ -36,18 +38,19 @@ class AzuraCastSync:
         session.mount('https://', adapter)
         return session
 
-    def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
+    def _perform_request(self, method, endpoint, headers=None, params=None, data=None, json=None):
         """Performs an HTTP request with connection handling and retry logic.
 
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
             endpoint (str): API endpoint.
             headers (dict, optional): Request headers.
+            params (dict, optional): URL parameters.
             data (dict, optional): Data to be sent in the body of the request.
             json (dict, optional): JSON data to be sent in the body of the request.
 
         Returns:
-            dict: JSON response.
+            requests.Response: The response object if successful, raises an exception otherwise.
 
         Raises:
             requests.exceptions.RequestException: If the HTTP request encounters an error.
@@ -59,13 +62,21 @@ class AzuraCastSync:
         max_attempts = 6
         timeout = 240  # Increased timeout for larger file uploads
 
-        for attempt in range(1, max_attempts + 1):  # Retry up to 6 times
+        for attempt in range(1, max_attempts + 1):
             session = None
-            response = None  # Initialize the response variable to ensure it exists
+            response = None
             try:
                 session = self._get_session()
                 logger.debug("Attempt %d: Making request to %s", attempt, url)
-                response = session.request(method, url, headers=headers, data=data, json=json, timeout=timeout)
+                response = session.request(
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
+                    data=data,
+                    json=json,
+                    timeout=timeout
+                )
                 response.raise_for_status()
 
                 if response.status_code == 413:
@@ -73,22 +84,18 @@ class AzuraCastSync:
                     time.sleep(2 ** attempt)
                     continue  # Retry on 413 error
 
-                return response.json()
+                return response
 
-            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout) as e:
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 logger.warning("Attempt %d: Request to %s failed: %s. Retrying...", attempt, url, e)
-                time.sleep(2 ** attempt)  # Exponential backoff
-
+                time.sleep(2 ** attempt)
             except requests.exceptions.RequestException as e:
-                # Check if response is available to avoid referencing a variable that might not be set
                 response_text = response.text if response else "No response"
                 logger.error("Attempt %d: Request to %s failed: %s - Response: %s", attempt, url, e, response_text)
-                raise e  # Exit on non-retriable exceptions
-
+                raise e
             finally:
                 if session:
-                    session.close()  # Ensure session is closed after each attempt
+                    session.close()
 
         logger.error("Request to %s failed after %d attempts", url, max_attempts)
         raise requests.exceptions.RequestException(f"Failed after {max_attempts} attempts")
@@ -97,22 +104,36 @@ class AzuraCastSync:
         """Retrieves a list of all known tracks in Azuracast.
 
         Returns:
-            list: List of file paths known to Azuracast.
+            list: List of dictionaries containing the known files metadata.
         """
-        endpoint = f"/station/{self.station_id}/files/list"
-        return self._perform_request("GET", endpoint)
+        endpoint = f"/station/{self.station_id}/files"
+        response = self._perform_request("GET", endpoint)
+        return response.json()  # Ensure the JSON content is returned
 
-    def check_file_in_azuracast(self, known_tracks, file_path):
-        """Checks if a file is in the list of known tracks.
+    def check_file_in_azuracast(self, known_tracks, track):
+        """Checks if a file with the same metadata exists in Azuracast.
 
         Args:
-            known_tracks (list): List of known file paths.
-            file_path (str): The path of the file to check.
+            known_tracks (list): List of known file metadata.
+            track (Track): The track object to check.
 
         Returns:
             bool: True if the file is known to Azuracast, False otherwise.
         """
-        return file_path in known_tracks
+        artist = track.get('AlbumArtist')
+        album = track.get('Album')
+        title = track.get('Name')
+        length = str(track.get('RunTimeTicks', 0) // 10000000)  # Convert ticks to seconds
+
+        for known_track in known_tracks:
+            if (known_track.get('artist') == artist 
+                    and known_track.get('album') == album 
+                    and known_track.get('title') == title):
+                track.azuracast_file_id = known_track['id']
+                logger.debug(f"File '{title}' already exists in Azuracast with ID '{track.azuracast_file_id}'")
+                return True
+        logger.debug(f"File '{title}' does not exist in Azuracast")
+        return False
 
     def upload_file_to_azuracast(self, file_content, file_key):
         """Uploads a file to Azuracast.
@@ -132,12 +153,8 @@ class AzuraCastSync:
         file_size = self._sizeof_fmt(len(file_content))
         logger.debug("Uploading file: %s, Size: %s", file_key, file_size)
 
-        # Introduce a delay to avoid rate limiting issues
-        # time.sleep(1)
-
         response = self._perform_request("POST", endpoint, json=data)
-        logger.debug("Uploaded file: %s, Response: %s", file_key, response)
-        return response
+        return response.json()  # We return the JSON content of the response
 
     def get_playlist(self, playlist_name):
         """Retrieves a playlist by name from Azuracast.
@@ -217,44 +234,100 @@ class AzuraCastSync:
         return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
 
     def upload_file_and_set_track_id(self, track):
-        """Upload file to AzuraCast and set the track's azuracast_file_id.
+        """Upload file to Azuracast and set the track's azuracast_file_id.
 
         Args:
             track: Track instance to upload.
 
         Returns:
-            bool: True if file was successfully uploaded or already exists in AzuraCast, False otherwise.
+            bool: True if file was successfully uploaded or already exists in Azuracast, False otherwise.
         """
         try:
-            azuracast_file_path = self.generate_file_path(track)
             known_tracks = self.get_known_tracks()
 
-            if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
+            if not self.check_file_in_azuracast(known_tracks, track):
+                # File does not exist, proceed with upload
                 file_content = track.download()
-                upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
+                upload_response = self.upload_file_to_azuracast(file_content, track.get('Path'))
                 track.azuracast_file_id = upload_response.get("id")
                 logger.debug("Uploaded file '%s' to Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
             else:
-                track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
-                track.azuracast_file_id = track_id
-                logger.debug("File '%s' already exists in Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
+                # File exists, check if it has ReplayGain metadata
+                track_id = track.azuracast_file_id  # This is set by check_file_in_azuracast
+
+                file_content = self.download_file_from_azuracast(track_id)
+                content = BytesIO(file_content)
+
+                if not has_replaygain_metadata(content, os.path.splitext(track['Path'])[1]):
+                    logger.debug("File '%s' does not have ReplayGain metadata, deleting it from Azuracast.", track['Name'])
+
+                    if self.delete_file_from_azuracast(track_id):
+                        # Re-analyze and upload with ReplayGain metadata
+                        new_file_content = track.download()
+                        upload_response = self.upload_file_to_azuracast(new_file_content, track.get('Path'))
+                        if upload_response and "id" in upload_response:
+                            track.azuracast_file_id = upload_response["id"]
+                            logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                        else:
+                            logger.error("Failed to upload file '%s' after deletion", track['Name'])
+                    else:
+                        logger.error("Failed to delete file '%s' from Azuracast, cannot re-upload", track['Name'])
+                else:
+                    logger.debug("File '%s' already exists in Azuracast with ID '%s' and has ReplayGain metadata", track['Name'], track.azuracast_file_id)
 
             return bool(track.azuracast_file_id)
         except Exception as e:
             logger.error("Error uploading '%s' to Azuracast: %s", track['Name'], e)
             return False
+
+    def download_file_from_azuracast(self, track_id):
+        """Downloads a file from Azuracast.
         
+        Args:
+            track_id (str): ID of the file to download.
+        
+        Returns:
+            bytes: Content of the file.
+        """
+        endpoint = f"/station/{self.station_id}/file/{track_id}/play"
+        response = self._perform_request("GET", endpoint)
+        return response.content
+
+    def delete_file_from_azuracast(self, track_id):
+        """Deletes a file from Azuracast.
+
+        Args:
+            track_id (str): ID of the file to delete.
+
+        Returns:
+            bool: True if the file was successfully deleted, False otherwise.
+        """
+        endpoint = f"/station/{self.station_id}/file/{track_id}"
+        response = self._perform_request("DELETE", endpoint)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("success") is True:
+                logger.debug("Successfully deleted file with ID '%s' from Azuracast", track_id)
+                return True
+            else:
+                logger.error("Failed to delete file with ID '%s' from Azuracast: %s", track_id, result.get("message"))
+        else:
+            logger.error("Failed to get a valid response for deleting file with ID '%s' from Azuracast: HTTP %s", track_id, response.status_code)
+        
+        return False
+
     def upload_playlist(self, playlist):
         """Uploads tracks to AzuraCast and sets their azuracast_file_id without updating the playlist.
 
         Args:
             playlist (list): List of Track instances to upload.
         """
-        with tqdm(total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track") as pbar:
+        with tqdm(total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track") as pbar_upload_playlist:
             for track in playlist:
                 if not self.upload_file_and_set_track_id(track):
                     logger.warning(f"Failed to upload '{track['Name']}' to Azuracast")
-                pbar.update(1)
+                pbar_upload_playlist.update(1)
         return True
 
     def sync_playlist(self, playlist_name, playlist):

@@ -165,6 +165,7 @@ cython_debug/
 /llm.md
 /lastfm_cache.db
 /lastfm_cache.db-journal
+/test.flac
 
 # macOS General
 .DS_Store
