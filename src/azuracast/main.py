@@ -130,9 +130,9 @@ class AzuraCastSync:
                     and known_track.get('album') == album 
                     and known_track.get('title') == title):
                 track.azuracast_file_id = known_track['id']
-                logger.info(f"File '{title}' already exists in Azuracast with ID '{track.azuracast_file_id}'")
+                logger.debug(f"File '{title}' already exists in Azuracast with ID '{track.azuracast_file_id}'")
                 return True
-        logger.info(f"File '{title}' does not exist in Azuracast")
+        logger.debug(f"File '{title}' does not exist in Azuracast")
         return False
 
     def upload_file_to_azuracast(self, file_content, file_key):
@@ -253,21 +253,25 @@ class AzuraCastSync:
                 logger.debug("Uploaded file '%s' to Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
             else:
                 # File exists, check if it has ReplayGain metadata
-                file_content = self.download_file_from_azuracast(track.azuracast_file_id)
+                track_id = track.azuracast_file_id  # This is set by check_file_in_azuracast
+
+                file_content = self.download_file_from_azuracast(track_id)
                 content = BytesIO(file_content)
 
                 if not has_replaygain_metadata(content, os.path.splitext(track['Path'])[1]):
-                    logger.info("File '%s' does not have ReplayGain metadata, deleting it from Azuracast.", track['Name'])
-                    self.delete_file_from_azuracast(track.azuracast_file_id)
+                    logger.debug("File '%s' does not have ReplayGain metadata, deleting it from Azuracast.", track['Name'])
 
-                    # Re-analyze and upload with ReplayGain metadata
-                    new_file_content = track.download()
-                    upload_response = self.upload_file_to_azuracast(new_file_content, track.get('Path'))
-                    if upload_response and "id" in upload_response:
-                        track.azuracast_file_id = upload_response["id"]
-                        logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                    if self.delete_file_from_azuracast(track_id):
+                        # Re-analyze and upload with ReplayGain metadata
+                        new_file_content = track.download()
+                        upload_response = self.upload_file_to_azuracast(new_file_content, track.get('Path'))
+                        if upload_response and "id" in upload_response:
+                            track.azuracast_file_id = upload_response["id"]
+                            logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                        else:
+                            logger.error("Failed to upload file '%s' after deletion", track['Name'])
                     else:
-                        logger.error("Failed to upload file '%s' after deletion", track['Name'])
+                        logger.error("Failed to delete file '%s' from Azuracast, cannot re-upload", track['Name'])
                 else:
                     logger.debug("File '%s' already exists in Azuracast with ID '%s' and has ReplayGain metadata", track['Name'], track.azuracast_file_id)
 
@@ -294,13 +298,24 @@ class AzuraCastSync:
 
         Args:
             track_id (str): ID of the file to delete.
+
+        Returns:
+            bool: True if the file was successfully deleted, False otherwise.
         """
         endpoint = f"/station/{self.station_id}/file/{track_id}"
         response = self._perform_request("DELETE", endpoint)
-        if response.status_code == 204:
-            logger.debug("Successfully deleted file with ID '%s' from Azuracast", track_id)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("success") is True:
+                logger.debug("Successfully deleted file with ID '%s' from Azuracast", track_id)
+                return True
+            else:
+                logger.error("Failed to delete file with ID '%s' from Azuracast: %s", track_id, result.get("message"))
         else:
-            logger.error("Failed to delete file with ID '%s' from Azuracast", track_id)
+            logger.error("Failed to get a valid response for deleting file with ID '%s' from Azuracast: HTTP %s", track_id, response.status_code)
+        
+        return False
 
     def upload_playlist(self, playlist):
         """Uploads tracks to AzuraCast and sets their azuracast_file_id without updating the playlist.
