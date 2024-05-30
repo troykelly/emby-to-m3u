@@ -47,7 +47,7 @@ from time import sleep
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 5
+BATCH_SIZE = 3
 
 
 def generate_playlists() -> None:
