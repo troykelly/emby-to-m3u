@@ -128,10 +128,11 @@ class AzuraCastSync:
         for known_track in known_tracks:
             if (known_track.get('artist') == artist 
                     and known_track.get('album') == album 
-                    and known_track.get('title') == title 
-                    and known_track.get('length') == length):
+                    and known_track.get('title') == title):
                 track.azuracast_file_id = known_track['id']
+                logger.info(f"File '{title}' already exists in Azuracast with ID '{track.azuracast_file_id}'")
                 return True
+        logger.info(f"File '{title}' does not exist in Azuracast")
         return False
 
     def upload_file_to_azuracast(self, file_content, file_key):
