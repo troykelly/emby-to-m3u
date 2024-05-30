@@ -115,7 +115,7 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     Returns:
         bool: True if ReplayGain metadata is present, False otherwise.
     """
-    content.seek(0)
+    content.seek(0)  # Ensure the buffer is at the beginning
     audio_file = MutagenFile(content, easy=True)
 
     if isinstance(audio_file, ID3):

@@ -5,6 +5,8 @@ from tqdm import tqdm
 from base64 import b64encode
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from io import BytesIO
+from replaygain.main import has_replaygain_metadata
 import time
 
 logger = logging.getLogger(__name__)
@@ -36,18 +38,19 @@ class AzuraCastSync:
         session.mount('https://', adapter)
         return session
 
-    def _perform_request(self, method, endpoint, headers=None, data=None, json=None):
+    def _perform_request(self, method, endpoint, headers=None, params=None, data=None, json=None):
         """Performs an HTTP request with connection handling and retry logic.
 
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE).
             endpoint (str): API endpoint.
             headers (dict, optional): Request headers.
+            params (dict, optional): URL parameters.
             data (dict, optional): Data to be sent in the body of the request.
             json (dict, optional): JSON data to be sent in the body of the request.
 
         Returns:
-            dict: JSON response.
+            requests.Response: The response object if successful, raises an exception otherwise.
 
         Raises:
             requests.exceptions.RequestException: If the HTTP request encounters an error.
@@ -59,36 +62,40 @@ class AzuraCastSync:
         max_attempts = 6
         timeout = 240  # Increased timeout for larger file uploads
 
-        for attempt in range(1, max_attempts + 1):  # Retry up to 6 times
+        for attempt in range(1, max_attempts + 1):
             session = None
-            response = None  # Initialize the response variable to ensure it exists
+            response = None
             try:
                 session = self._get_session()
                 logger.debug("Attempt %d: Making request to %s", attempt, url)
-                response = session.request(method, url, headers=headers, data=data, json=json, timeout=timeout)
+                response = session.request(
+                    method, 
+                    url, 
+                    headers=headers, 
+                    params=params, 
+                    data=data, 
+                    json=json, 
+                    timeout=timeout
+                )
                 response.raise_for_status()
-
+                
                 if response.status_code == 413:
                     logger.warning("Attempt %d: Request to %s failed due to size limit. Retrying...", attempt, url)
                     time.sleep(2 ** attempt)
                     continue  # Retry on 413 error
 
-                return response.json()
+                return response
 
-            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout) as e:
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 logger.warning("Attempt %d: Request to %s failed: %s. Retrying...", attempt, url, e)
-                time.sleep(2 ** attempt)  # Exponential backoff
-
+                time.sleep(2 ** attempt)
             except requests.exceptions.RequestException as e:
-                # Check if response is available to avoid referencing a variable that might not be set
                 response_text = response.text if response else "No response"
                 logger.error("Attempt %d: Request to %s failed: %s - Response: %s", attempt, url, e, response_text)
-                raise e  # Exit on non-retriable exceptions
-
+                raise e
             finally:
                 if session:
-                    session.close()  # Ensure session is closed after each attempt
+                    session.close()
 
         logger.error("Request to %s failed after %d attempts", url, max_attempts)
         raise requests.exceptions.RequestException(f"Failed after {max_attempts} attempts")
@@ -223,27 +230,65 @@ class AzuraCastSync:
             track: Track instance to upload.
 
         Returns:
-            bool: True if file was successfully uploaded or already exists in AzuraCast, False otherwise.
+            bool: True if file was successfully uploaded or already exists in Azuracast, False otherwise.
         """
         try:
             azuracast_file_path = self.generate_file_path(track)
             known_tracks = self.get_known_tracks()
 
             if not self.check_file_in_azuracast(known_tracks, azuracast_file_path):
+                # File does not exist, proceed with upload
                 file_content = track.download()
                 upload_response = self.upload_file_to_azuracast(file_content, azuracast_file_path)
                 track.azuracast_file_id = upload_response.get("id")
                 logger.debug("Uploaded file '%s' to Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
             else:
+                # File exists, check if it has ReplayGain metadata
                 track_id = self._find_azuracast_track_id(known_tracks, azuracast_file_path)
                 track.azuracast_file_id = track_id
-                logger.debug("File '%s' already exists in Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
+
+                file_content = self.download_file_from_azuracast(track_id)
+                content = BytesIO(file_content)
+
+                if not has_replaygain_metadata(content, os.path.splitext(track['Path'])[1]):
+                    logger.info("File '%s' does not have ReplayGain metadata, deleting it from Azuracast.", track['Name'])
+                    self.delete_file_from_azuracast(track_id)
+
+                    # Re-analyze and upload with ReplayGain metadata
+                    new_file_content = track.download()
+                    upload_response = self.upload_file_to_azuracast(new_file_content, azuracast_file_path)
+                    track.azuracast_file_id = upload_response.get("id")
+                    logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                else:
+                    logger.debug("File '%s' already exists in Azuracast with ID '%s' and has ReplayGain metadata", track['Name'], track.azuracast_file_id)
 
             return bool(track.azuracast_file_id)
         except Exception as e:
             logger.error("Error uploading '%s' to Azuracast: %s", track['Name'], e)
             return False
+
+    def download_file_from_azuracast(self, track_id):
+        """Downloads a file from Azuracast.
         
+        Args:
+            track_id (str): ID of the file to download.
+        
+        Returns:
+            bytes: Content of the file.
+        """
+        endpoint = f"/station/{self.station_id}/file/{track_id}/play"
+        response = self._perform_request("GET", endpoint)
+        return response.content
+
+    def delete_file_from_azuracast(self, track_id):
+        """Deletes a file from Azuracast.
+
+        Args:
+            track_id (str): ID of the file to delete.
+        """
+        endpoint = f"/station/{self.station_id}/file/{track_id}"
+        self._perform_request("DELETE", endpoint)
+
     def upload_playlist(self, playlist):
         """Uploads tracks to AzuraCast and sets their azuracast_file_id without updating the playlist.
 
