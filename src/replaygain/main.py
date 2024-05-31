@@ -5,10 +5,9 @@ import logging
 from io import BytesIO
 from typing import Tuple, Optional
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
+from mutagen.id3 import ID3, TXXX
 from mutagen.flac import FLAC
 from mutagen.oggopus import OggOpus
-from shutil import copyfileobj
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -83,7 +82,7 @@ def apply_replaygain(
         if file_format == "mp3":
             if not audio_file.tags:
                 audio_file.add_tags()
-                
+
             # Clear existing gain and peak tags
             for tag in audio_file.tags.getall("TXXX:replaygain_track_gain"):
                 audio_file.tags.delall(tag.FrameID)
@@ -100,6 +99,21 @@ def apply_replaygain(
             audio_file["replaygain_track_gain"] = f"{gain:.2f} dB"
             audio_file["replaygain_track_peak"] = f"{peak:.6f}"
 
+            # Explicitly handle FLAC file header:
+            recoverable_file_content = BytesIO()
+            file_like.seek(0)
+            recoverable_file_content.write(file_like.read())
+            recoverable_file_content.seek(0)
+
+            audio_file.save(recoverable_file_content)
+            recoverable_file_content.seek(0)
+
+            if recoverable_file_content.getbuffer().nbytes <= 4:
+                logger.error("File size after applying ReplayGain is invalid (<= 4 bytes).")
+                raise ValueError("File size after applying ReplayGain is invalid (<= 4 bytes).")
+
+            return recoverable_file_content.getvalue()
+
         elif file_format == "opus" and r128_track_gain is not None and r128_album_gain is not None:
             assert isinstance(audio_file, OggOpus)  # Type hint for clarity
             audio_file["R128_TRACK_GAIN"] = str(r128_track_gain)
@@ -107,7 +121,6 @@ def apply_replaygain(
 
         else:
             raise NotImplementedError(f"ReplayGain application for {file_format} not implemented.")
-
         # Save to a BytesIO object
         updated_content = BytesIO()
         audio_file.save(updated_content)
@@ -120,7 +133,7 @@ def apply_replaygain(
 
         final_size = updated_content.getbuffer().nbytes
         logger.debug(f"Post ReplayGain application file size: {final_size} bytes")
-        
+
         return updated_content.getvalue()
 
     except Exception as e:
@@ -128,7 +141,7 @@ def apply_replaygain(
         import traceback
         logger.error(f"Failed to apply ReplayGain metadata: {e}")
         logger.debug(traceback.format_exc())
-        
+
         # Return the original file content to ensure the process continues
         return original_file_content.getvalue()
 

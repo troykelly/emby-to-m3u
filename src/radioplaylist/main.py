@@ -146,8 +146,8 @@ class RadioPlaylistGenerator:
         with tqdm(total=min_duration, desc=f"Generating playlist '{playlist_name}'", unit="second") as pbar:
             while playlist_duration < min_duration:
                 if len(genres) == len(genre_rejects):
-                    logger.debug(f"Removing year filters for '{playlist_name}'.")
                     genres = self._remove_year_decade_filters(genres)
+                    logger.debug(f"Removing year filters for '{playlist_name}: {genres}'.")
                     genre_rejects.clear()
                     if not genres:
                         logger.warning(f"Could not generate full playlist '{playlist_name}'. Insufficient tracks.")

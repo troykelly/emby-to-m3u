@@ -304,7 +304,7 @@ class AzuraCastSync:
             if not self.check_file_in_azuracast(known_tracks, track):
                 # File does not exist, proceed with upload
                 file_content: bytes = track.download()
-                upload_response: Dict[str, Any] = self.upload_file_to_azuracast(file_content, track.get("Path", ""))
+                upload_response: Dict[str, Any] = self.upload_file_to_azuracast(file_content, self.generate_file_path(track))
                 track["azuracast_file_id"] = upload_response.get("id")
                 if track["azuracast_file_id"]:
                     logger.debug(
@@ -334,7 +334,7 @@ class AzuraCastSync:
                     if self.delete_file_from_azuracast(track_id):
                         # Re-analyze and upload with ReplayGain metadata
                         new_file_content: bytes = track.download()
-                        upload_response = self.upload_file_to_azuracast(new_file_content, track.get("Path", ""))
+                        upload_response = self.upload_file_to_azuracast(new_file_content, self.generate_file_path(track))
                         if upload_response and "id" in upload_response:
                             track["azuracast_file_id"] = upload_response["id"]
                             logger.debug(
