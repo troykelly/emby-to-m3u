@@ -325,6 +325,9 @@ class AzuraCastSync:
         """
         with tqdm(total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track") as pbar_upload_playlist:
             for track in playlist:
+                artist_name = track.get('AlbumArtist', 'Unknown Artist')
+                title = track.get('Name', 'Unknown Title')
+                pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
                 if not self.upload_file_and_set_track_id(track):
                     logger.warning(f"Failed to upload '{track['Name']}' to Azuracast")
                 pbar_upload_playlist.update(1)

@@ -70,9 +70,7 @@ class Track(dict):
         return self
 
     def _check_and_apply_replaygain(self) -> None:
-        """Check for existing ReplayGain metadata and apply it if missing."""
         file_format = self['Path'].split('.')[-1].lower()
-        self.content.seek(0)
 
         if not has_replaygain_metadata(self.content, file_format):
-            self.analyze_replaygain()
+            self.content = BytesIO(process_replaygain(self.content.getvalue(), file_format))

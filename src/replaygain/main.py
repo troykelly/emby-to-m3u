@@ -1,43 +1,41 @@
 # src/replaygain/main.py
 
-import io
-import os
-import tempfile
 import subprocess
 from io import BytesIO
-from tqdm import tqdm
-from pydub import AudioSegment
+from typing import Tuple, Optional
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, TXXX
+from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
 from mutagen.flac import FLAC
-from typing import Tuple
+from mutagen.oggopus import OggOpus
+from tqdm import tqdm
 
-def calculate_replaygain(file_path: str) -> Tuple[float, float]:
+def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, float]:
     """Calculate ReplayGain values for an audio file using ffmpeg.
 
     Args:
-        file_path: Path to the audio file.
+        file_like: A file-like object representing the audio content.
+        file_format: The format of the audio file (e.g., 'mp3', 'flac', 'opus').
 
     Returns:
         A tuple containing the gain (in dB) and peak values.
     """
     command = [
         "ffmpeg",
-        "-i", file_path,
+        "-i", "pipe:0",
         "-af", "replaygain",
         "-f", "null", "-"
     ]
 
-    result = subprocess.run(command, stderr=subprocess.PIPE, text=True)
-    output = result.stderr
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate(input=file_like.getbuffer())
 
     gain = None
     peak = None
 
-    for line in output.split("\n"):
-        if " track_gain " in line.lower():
+    for line in err.decode('utf-8').split('\n'):
+        if "track_gain" in line:
             gain = float(line.split('=')[-1].strip().split()[0])
-        elif " track_peak " in line.lower():
+        elif "track_peak" in line:
             peak = float(line.split('=')[-1].strip().split()[0])
 
     if gain is None or peak is None:
@@ -45,40 +43,48 @@ def calculate_replaygain(file_path: str) -> Tuple[float, float]:
 
     return gain, peak
 
-def apply_replaygain(file_path: str, gain: float, peak: float) -> None:
+def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: str, r128_track_gain: Optional[int] = None, r128_album_gain: Optional[int] = None) -> bytes:
     """Apply ReplayGain metadata to an audio file.
 
     Args:
-        file_path: The path to the audio file.
+        file_like: A file-like object representing the audio content.
         gain: The ReplayGain track gain value in dB.
         peak: The ReplayGain track peak value.
-    """
-    audio_file = MutagenFile(file_path, easy=True)
+        file_format: The format of the audio file (e.g., 'mp3', 'flac', 'opus').
+        r128_track_gain: R128 track gain for Opus files.
+        r128_album_gain: R128 album gain for Opus files.
 
-    if audio_file is None:
+    Returns:
+        bytes: The updated file content with ReplayGain metadata.
+    """
+    file_like.seek(0)
+    audio_file = MutagenFile(file_like, easy=True)
+
+    if not audio_file:
         raise RuntimeError("Failed to load audio file with mutagen.")
 
-    if file_path.lower().endswith(".mp3"):
+    if file_format == "mp3":
         if not isinstance(audio_file, ID3):
             audio_file.add_tags()
-        existing_gain_tag = next((tag for tag in audio_file.tags if tag.FrameID == "TXXX" and tag.desc == "replaygain_track_gain"), None)
-        existing_peak_tag = next((tag for tag in audio_file.tags if tag.FrameID == "TXXX" and tag.desc == "replaygain_track_peak"), None)
-        if existing_gain_tag:
-            existing_gain_tag.text[0] = str(gain)
-        else:
-            audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_gain", text=str(gain)))
-        if existing_peak_tag:
-            existing_peak_tag.text[0] = str(peak)
-        else:
-            audio_file.tags.add(TXXX(encoding=3, desc="replaygain_track_peak", text=str(peak)))
-    elif file_path.lower().endswith(".flac"):
-        audio_file = FLAC(file_path)
+        gain_tag = TXXX(encoding=3, desc="replaygain_track_gain", text=str(gain))
+        peak_tag = TXXX(encoding=3, desc="replaygain_track_peak", text=str(peak))
+        audio_file.tags.add(gain_tag)
+        audio_file.tags.add(peak_tag)
+    elif file_format == "flac":
+        audio_file = FLAC(file_like)
         audio_file["replaygain_track_gain"] = str(gain)
         audio_file["replaygain_track_peak"] = str(peak)
+    elif file_format == "opus" and r128_track_gain is not None and r128_album_gain is not None:
+        audio_file = OggOpus(file_like)
+        audio_file["R128_TRACK_GAIN"] = str(r128_track_gain)
+        audio_file["R128_ALBUM_GAIN"] = str(r128_album_gain)
     else:
-        raise NotImplementedError(f"ReplayGain application for {file_path} not implemented.")
+        raise NotImplementedError(f"ReplayGain application for {file_format} not implemented.")
 
-    audio_file.save()
+    updated_content = BytesIO()
+    audio_file.save(updated_content)
+    updated_content.seek(0)  # Ensure the pointer is at the start after saving
+    return updated_content.getvalue()
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     """Process ReplayGain for a given audio file content.
@@ -90,27 +96,29 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     Returns:
         bytes: The binary content of the audio file with ReplayGain metadata.
     """
-    with tqdm(total=100, desc="Analysing replaygain metadata", unit="%") as pbar_replaygain:    
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_format}") as temp_audio_file:
-            temp_audio_file.write(file_content)
-            temp_audio_path = temp_audio_file.name
-            
-        pbar_replaygain.update(25)            
+    file_like = BytesIO(file_content)
 
-        gain, peak = calculate_replaygain(temp_audio_path)
-        if gain:
-            pbar_replaygain.set_description(f"Applying replaygain metadata: {gain:.2f} dB")
-        pbar_replaygain.update(50)        
-        apply_replaygain(temp_audio_path, gain, peak)
-        pbar_replaygain.update(15)
+    if file_format == 'opus':
+        with tqdm(total=100, desc="Analyzing replaygain metadata", unit="%") as pbar:
+            pbar.update(25)
 
-        with open(temp_audio_path, "rb") as f:
-            updated_content = f.read()
-            
-        pbar_replaygain.update(5)
+            gain, peak = calculate_replaygain(file_like, file_format)
+            r128_track_gain = int((gain - 1.0) * 256)
+            r128_album_gain = r128_track_gain
 
-        os.remove(temp_audio_path)  # Clean up temporary file
-        pbar_replaygain.update(5)
+            pbar.update(50)
+
+            updated_content = apply_replaygain(file_like, gain, peak, file_format, r128_track_gain, r128_album_gain)
+            pbar.update(25)
+    else:
+        with tqdm(total=100, desc="Analyzing replaygain metadata", unit="%") as pbar:
+            pbar.update(25)
+
+            gain, peak = calculate_replaygain(file_like, file_format)
+            pbar.update(50)
+
+            updated_content = apply_replaygain(file_like, gain, peak, file_format)
+            pbar.update(25)
 
     return updated_content
 
@@ -128,8 +136,9 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     audio_file = MutagenFile(content, easy=True)
 
     if isinstance(audio_file, ID3):
-        return any(tag.FrameID == "TXXX" and (tag.desc == "replaygain_track_gain" or tag.desc == "replaygain_track_peak") for tag in audio_file.tags)
+        return any(tag.FrameID == "TXXX" and (tag.desc in ["replaygain_track_gain", "replaygain_track_peak"]) for tag in audio_file.tags)
     elif isinstance(audio_file, FLAC):
         return any(tag in audio_file for tag in ["replaygain_track_gain", "replaygain_track_peak"])
-
+    elif isinstance(audio_file, OggOpus):
+        return any(tag in audio_file for tag in ["R128_TRACK_GAIN", "R128_ALBUM_GAIN"])
     return False
