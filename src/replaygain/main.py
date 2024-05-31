@@ -66,11 +66,12 @@ def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: 
     if not audio_file:
         raise RuntimeError("Failed to load audio file with mutagen.")
 
+    logger.debug(f"Applying ReplayGain metadata: gain={gain}, peak={peak}, format={file_format}")
+
     if file_format == "mp3":
         if not audio_file.tags:
             audio_file.add_tags()
 
-        # Remove existing ReplayGain tags if they exist to prevent conflicts
         existing_gain_tags = audio_file.tags.getall("TXXX:replaygain_track_gain")
         existing_peak_tags = audio_file.tags.getall("TXXX:replaygain_track_peak")
 
@@ -95,8 +96,9 @@ def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: 
     updated_content = BytesIO()
     audio_file.save(updated_content)
     updated_content.seek(0)  # Ensure the pointer is at the start after saving
-    # Log file size of updated content
-    logger.debug(f"Post replaygain application file size: {len(updated_content.getvalue())} bytes")
+
+    logger.debug(f"Post replaygain application file size: {updated_content.getbuffer().nbytes} bytes")
+
     return updated_content.getvalue()
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
@@ -123,7 +125,11 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
 
             pbar.update(50)
 
-            updated_content = apply_replaygain(file_like, gain, peak, file_format, r128_track_gain, r128_album_gain)
+            try:
+                updated_content = apply_replaygain(file_like, gain, peak, file_format, r128_track_gain, r128_album_gain)
+            except Exception as e:
+                logger.error(f"Failed to apply ReplayGain metadata: {e}")
+                updated_content = file_content
             pbar.update(25)
     else:
         with tqdm(total=100, desc="Analyzing replaygain metadata", unit="%") as pbar:
@@ -133,8 +139,15 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
             pbar.set_description(f"Track gain: {gain}")
             pbar.update(50)
 
-            updated_content = apply_replaygain(file_like, gain, peak, file_format)
+            try:
+                updated_content = apply_replaygain(file_like, gain, peak, file_format)
+            except Exception as e:
+                logger.error(f"Failed to apply ReplayGain metadata: {e}")
+                updated_content = file_content
             pbar.update(25)
+
+    final_size = len(updated_content)
+    logger.debug(f"Final post-replaygain file size: {final_size} bytes")
 
     return updated_content
 

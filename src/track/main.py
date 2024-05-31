@@ -1,9 +1,12 @@
 import os
 import requests
+import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 from io import BytesIO
 
 from replaygain.main import process_replaygain, has_replaygain_metadata
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from playlist.main import PlaylistManager
@@ -46,6 +49,9 @@ class Track(dict):
         self._check_and_apply_replaygain()
         self.content.seek(0)  # Ensure pointer reset after ReplayGain processing
 
+        if len(self.content.getbuffer()) <= 4:
+            raise ValueError(f"Downloaded track '{self['Name']}' is only 4 bytes or less")
+
         return self.content.getvalue()
 
     def analyze_replaygain(self) -> 'Track':
@@ -72,3 +78,6 @@ class Track(dict):
 
         if not has_replaygain_metadata(self.content, file_format):
             self.content = BytesIO(process_replaygain(self.content.getvalue(), file_format))
+            logger.debug(f"Applied ReplayGain to track '{self['Name']}'")
+        else:
+            logger.debug(f"ReplayGain metadata already present for track '{self['Name']}'")
