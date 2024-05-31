@@ -146,6 +146,12 @@ class AzuraCastSync:
             dict: Response from the server, commonly including the uploaded file's metadata.
         """
         endpoint = f"/station/{self.station_id}/files"
+        
+        # Ensure entire bytes content is correctly handled before encoding
+        if isinstance(file_content, BytesIO):
+            file_content.seek(0)
+            file_content = file_content.read()
+            
         b64_content = b64encode(file_content).decode("utf-8")
         data = {"path": file_key, "file": b64_content}
 

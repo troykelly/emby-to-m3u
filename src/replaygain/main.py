@@ -64,18 +64,26 @@ def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: 
         raise RuntimeError("Failed to load audio file with mutagen.")
 
     if file_format == "mp3":
-        if not isinstance(audio_file, ID3):
+        if not audio_file.tags:
             audio_file.add_tags()
-        gain_tag = TXXX(encoding=3, desc="replaygain_track_gain", text=str(gain))
-        peak_tag = TXXX(encoding=3, desc="replaygain_track_peak", text=str(peak))
+
+        # Remove existing ReplayGain tags if they exist to prevent conflicts
+        existing_gain_tags = audio_file.tags.getall("TXXX:replaygain_track_gain")
+        existing_peak_tags = audio_file.tags.getall("TXXX:replaygain_track_peak")
+
+        for tag in existing_gain_tags:
+            audio_file.tags.delall(tag.FrameID)
+        for tag in existing_peak_tags:
+            audio_file.tags.delall(tag.FrameID)
+
+        gain_tag = TXXX(encoding=3, desc="replaygain_track_gain", text=f"{gain:.2f} dB")
+        peak_tag = TXXX(encoding=3, desc="replaygain_track_peak", text=f"{peak:.6f}")
         audio_file.tags.add(gain_tag)
         audio_file.tags.add(peak_tag)
     elif file_format == "flac":
-        audio_file = FLAC(file_like)
-        audio_file["replaygain_track_gain"] = str(gain)
-        audio_file["replaygain_track_peak"] = str(peak)
+        audio_file["replaygain_track_gain"] = f"{gain:.2f} dB"
+        audio_file["replaygain_track_peak"] = f"{peak:.6f}"
     elif file_format == "opus" and r128_track_gain is not None and r128_album_gain is not None:
-        audio_file = OggOpus(file_like)
         audio_file["R128_TRACK_GAIN"] = str(r128_track_gain)
         audio_file["R128_ALBUM_GAIN"] = str(r128_album_gain)
     else:
