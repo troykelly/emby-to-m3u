@@ -149,12 +149,11 @@ class AzuraCastSync:
         b64_content = b64encode(file_content).decode("utf-8")
         data = {"path": file_key, "file": b64_content}
 
-        # Log file size in a readable format
         file_size = self._sizeof_fmt(len(file_content))
         logger.debug("Uploading file: %s, Size: %s", file_key, file_size)
 
         response = self._perform_request("POST", endpoint, json=data)
-        return response.json()  # We return the JSON content of the response
+        return response.json()
 
     def get_playlist(self, playlist_name):
         """Retrieves a playlist by name from Azuracast.

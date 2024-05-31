@@ -30,9 +30,6 @@ class Track(dict):
 
         Returns:
             Binary content of the track's file.
-
-        Raises:
-            ValueError: If Emby server URL or API key is not set.
         """
         track_id = self['Id']
         emby_server_url = os.getenv('EMBY_SERVER_URL')
@@ -47,6 +44,7 @@ class Track(dict):
 
         self.content = BytesIO(response.content)
         self._check_and_apply_replaygain()
+        self.content.seek(0)  # Ensure pointer reset after ReplayGain processing
 
         return self.content.getvalue()
 
