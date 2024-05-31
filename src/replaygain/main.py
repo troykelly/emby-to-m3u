@@ -118,6 +118,8 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
             gain, peak = calculate_replaygain(file_like, file_format)
             r128_track_gain = int((gain - 1.0) * 256)
             r128_album_gain = r128_track_gain
+            
+            pbar.set_description(f"Track R128 gain: {r128_track_gain}")
 
             pbar.update(50)
 
@@ -128,6 +130,7 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
             pbar.update(25)
 
             gain, peak = calculate_replaygain(file_like, file_format)
+            pbar.set_description(f"Track gain: {gain}")
             pbar.update(50)
 
             updated_content = apply_replaygain(file_like, gain, peak, file_format)
