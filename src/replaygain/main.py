@@ -148,10 +148,33 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     content.seek(0)
     audio_file = MutagenFile(content, easy=True)
 
+    def log_replaygain_metadata(tags: dict, metadata_keys: list) -> bool:
+        """Logs and checks for the presence of ReplayGain metadata.
+
+        Args:
+            tags: Audio file tags.
+            metadata_keys: List of ReplayGain metadata keys.
+
+        Returns:
+            bool: True if ReplayGain metadata is found, False otherwise.
+        """
+        has_metadata = False
+        for key in metadata_keys:
+            if key in tags:
+                logger.debug(f"Found ReplayGain metadata: {key} = {tags[key]}")
+                has_metadata = True
+        return has_metadata
+
     if isinstance(audio_file, ID3):
-        return any(tag.FrameID == "TXXX" and (tag.desc in ["replaygain_track_gain", "replaygain_track_peak"]) for tag in audio_file.tags)
+        metadata_keys = ["replaygain_track_gain", "replaygain_track_peak"]
+        return log_replaygain_metadata(audio_file, metadata_keys)
+
     elif isinstance(audio_file, FLAC):
-        return any(tag in audio_file for tag in ["replaygain_track_gain", "replaygain_track_peak"])
+        metadata_keys = ["replaygain_track_gain", "replaygain_track_peak"]
+        return log_replaygain_metadata(audio_file.tags, metadata_keys)
+
     elif isinstance(audio_file, OggOpus):
-        return any(tag in audio_file for tag in ["R128_TRACK_GAIN", "R128_ALBUM_GAIN"])
+        metadata_keys = ["R128_TRACK_GAIN", "R128_ALBUM_GAIN"]
+        return log_replaygain_metadata(audio_file, metadata_keys)
+
     return False
