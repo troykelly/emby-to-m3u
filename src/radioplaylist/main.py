@@ -129,75 +129,74 @@ class RadioPlaylistGenerator:
         """Generates a radio playlist based on input genres, minimum duration, and playlist name.
 
         Args:
-            genres (list): List of genres to include in the playlist.
-            min_duration (int): Minimum duration of the playlist in seconds.
-            playlist_name (str): Name of the playlist.
-            
+            genres: List of genres to include in the playlist.
+            min_duration: Minimum duration of the playlist in seconds.
+            playlist_name: Name of the playlist.
+
         Returns:
-            list: Generated playlist.
+            Generated playlist.
         """
+        def track_already_added(track_id: str) -> bool:
+            return track_id in [track['Id'] for track in playlist]
+        
+        def is_track_rejected(track: Dict[str, Any]) -> bool:
+            return self._is_rejected(track, playlist_name)
+        
+        def select_random_genre(genres: List[str], ignored_genres: set) -> Optional[str]:
+            available_genres = [genre for genre in genres if genre not in ignored_genres]
+            return random.choice(available_genres) if available_genres else None
+
+        def add_track_to_playlist(track: Dict[str, Any], playlist: List[Dict[str, Any]]) -> None:
+            playlist.append(track)
+            seen_tracks.add(track['Id'])
+            update_playlist_duration(track['RunTimeTicks'] // 10000000)  # Convert ticks to seconds
+
+        def update_playlist_duration(duration: int) -> None:
+            nonlocal playlist_duration
+            playlist_duration += duration
+        
+        def refresh_genres(genres: List[str]) -> List[str]:
+            return self._remove_year_decade_filters(genres)
+
         playlist = []
         playlist_duration = 0
         seen_tracks = set()
-        genre_rejects = set()
-        max_failures = 20
-        failure_count = 0
+        ignored_genres = set()
+        retry_limit = 20
+        retry_count = 0
 
-        with tqdm(total=min_duration, desc=f"Generating playlist '{playlist_name}'", unit="second") as pbar:
-            while playlist_duration < min_duration:
-                if len(genres) == len(genre_rejects):
-                    genres = self._remove_year_decade_filters(genres)
-                    genre_rejects.clear()
-                    if not genres:
-                        logger.warning(f"Could not generate full playlist '{playlist_name}'. Insufficient tracks.")
-                        break
+        while playlist_duration < min_duration:
+            if retry_count >= retry_limit:
+                break
 
-                genre = random.choice([g for g in genres if g not in genre_rejects])
-                seed_track = self._get_random_track_by_genre(genre)
+            genre = select_random_genre(genres, ignored_genres)
+            if not genre:
+                genres = refresh_genres(genres)
+                if not genres:
+                    logger.warning(f"Cannot generate full playlist '{playlist_name}': insufficient tracks.")
+                    break
+                ignored_genres.clear()
+                continue
 
-                if not seed_track or seed_track['Id'] in seen_tracks:
-                    genre_rejects.add(genre)
-                    failure_count += 1
-                    if failure_count >= max_failures:
-                        logger.warning(f"Max failures reached. Unable to complete playlist '{playlist_name}'.")
-                        break
-                    continue
+            initial_track = self._get_random_track_by_genre(genre)
+            if not initial_track or track_already_added(initial_track['Id']) or is_track_rejected(initial_track):
+                ignored_genres.add(genre)
+                retry_count += 1
+                continue
 
-                if self._is_rejected(seed_track, playlist_name):
-                    genre_rejects.add(genre)
-                    failure_count += 1
-                    if failure_count >= max_failures:
-                        logger.warning(f"Max failures reached. Unable to complete playlist '{playlist_name}'.")
-                        break
-                    continue
+            retry_count = 0  # Reset retry count on successful track addition
+            add_track_to_playlist(initial_track, playlist)
 
-                failure_count = 0  # Reset failure count on successful addition
-                playlist.append(seed_track)
-                duration = seed_track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
-                playlist_duration += duration
-                seen_tracks.add(seed_track['Id'])
-                pbar.update(duration)
+            candidate_tracks = self._get_similar_tracks(initial_track)
+            for candidate in candidate_tracks:
+                if random.random() < 0.3:
+                    break
 
-                # Loop for fetching similar tracks
-                similar_tracks = self._get_similar_tracks(seed_track)
-                for similar_track in similar_tracks:
-                    if not isinstance(similar_track, dict) or 'artist' not in similar_track or 'title' not in similar_track:
-                        continue
+                similar_track = self.playlist_manager.get_track_by_title_and_artist(candidate['title'], candidate['artist'])
+                if similar_track and not track_already_added(similar_track['Id']) and not is_track_rejected(similar_track):
+                    add_track_to_playlist(similar_track, playlist)
 
-                    track_artist = similar_track['artist']
-                    track_title = similar_track['title']
-                    track = self.playlist_manager.get_track_by_title_and_artist(track_title, track_artist)
-
-                    if track and track['Id'] not in seen_tracks and not self._is_rejected(track, playlist_name):
-                        playlist.append(track)
-                        duration = track['RunTimeTicks'] // 10000000  # Convert ticks to seconds
-                        playlist_duration += duration
-                        seen_tracks.add(track['Id'])
-                        pbar.update(duration)
-
-                    if random.random() < 0.3:
-                        break
-
-                # We do not update failure_count here to avoid counting every similar tracks loop as a failure
+                if not candidate_tracks:
+                    genres = refresh_genres(genres)
 
         return playlist

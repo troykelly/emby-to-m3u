@@ -1,9 +1,12 @@
 import os
 import requests
+import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 from io import BytesIO
 
 from replaygain.main import process_replaygain, has_replaygain_metadata
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from playlist.main import PlaylistManager
@@ -30,9 +33,6 @@ class Track(dict):
 
         Returns:
             Binary content of the track's file.
-
-        Raises:
-            ValueError: If Emby server URL or API key is not set.
         """
         track_id = self['Id']
         emby_server_url = os.getenv('EMBY_SERVER_URL')
@@ -47,32 +47,18 @@ class Track(dict):
 
         self.content = BytesIO(response.content)
         self._check_and_apply_replaygain()
+        self.content.seek(0)  # Ensure pointer reset after ReplayGain processing
+
+        if len(self.content.getbuffer()) <= 4:
+            raise ValueError(f"Downloaded track '{self['Name']}' is only 4 bytes or less")
 
         return self.content.getvalue()
 
-    def analyze_replaygain(self) -> 'Track':
-        """Analyzes the track's ReplayGain and updates its metadata.
-
-        Returns:
-            self: The Track instance with updated ReplayGain metadata.
-        """
-        if self.content is None:
-            raise ValueError("Track content is not set. Ensure the track is downloaded first.")
-
-        filename = self['Path']
-        file_format = filename.split('.')[-1].lower()
-
-        self.content.seek(0)
-        updated_content = process_replaygain(self.content.read(), file_format)
-
-        self.content = BytesIO(updated_content)
-        self.content.seek(0)  # Ensure the content pointer is at the start for future reads
-        return self
-
     def _check_and_apply_replaygain(self) -> None:
-        """Check for existing ReplayGain metadata and apply it if missing."""
         file_format = self['Path'].split('.')[-1].lower()
-        self.content.seek(0)
 
         if not has_replaygain_metadata(self.content, file_format):
-            self.analyze_replaygain()
+            self.content = BytesIO(process_replaygain(self.content.getvalue(), file_format))
+            logger.debug(f"Applied ReplayGain to track '{self['Name']}'")
+        else:
+            logger.debug(f"ReplayGain metadata already present for track '{self['Name']}'")

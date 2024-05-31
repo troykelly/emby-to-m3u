@@ -43,13 +43,21 @@ from dateutil.parser import parse
 from croniter import croniter
 from time import sleep
 
-# Set the global logging level to INFO
-logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
+# Get the logging level from the environment, default to 'INFO' if not set or invalid
+log_level = os.getenv('M3U_LOGGING_LEVEL', 'INFO').upper()
+numeric_level = getattr(logging, log_level, None)
+if not isinstance(numeric_level, int):
+    raise ValueError(f'Invalid log level: {log_level}')
+
+# Configure the basic logging settings with the specified log level
+logging.basicConfig(level=numeric_level, format='%(levelname)s:%(name)s:%(message)s')
+
+# Get a logger
 logger = logging.getLogger(__name__)
 
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
-BATCH_SIZE = 3
+BATCH_SIZE = os.getenv('M3U_BATCH_SIZE', 1)
 
 def generate_playlists() -> None:
     """Main function to generate m3u playlists for genres, artists, albums, and years."""

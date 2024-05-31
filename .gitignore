@@ -166,6 +166,8 @@ cython_debug/
 /lastfm_cache.db
 /lastfm_cache.db-journal
 /test.flac
+/test.opus
+/test.mp3
 
 # macOS General
 .DS_Store
