@@ -8,6 +8,7 @@ from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
 from mutagen.flac import FLAC
 from mutagen.oggopus import OggOpus
+from shutil import copyfileobj
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,14 @@ def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, f
 
     return gain, peak
 
-def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: str, r128_track_gain: Optional[int] = None, r128_album_gain: Optional[int] = None) -> bytes:
+def apply_replaygain(
+    file_like: BytesIO,
+    gain: float,
+    peak: float,
+    file_format: str,
+    r128_track_gain: Optional[int] = None,
+    r128_album_gain: Optional[int] = None
+) -> bytes:
     """Apply ReplayGain metadata to an audio file.
 
     Args:
@@ -60,46 +68,68 @@ def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: 
     Returns:
         bytes: The updated file content with ReplayGain metadata.
     """
-    file_like.seek(0)
-    audio_file = MutagenFile(file_like, easy=True)
+    try:
+        # Create a deep copy of the original file for fallback
+        original_file_content = BytesIO()
+        copyfileobj(file_like, original_file_content)
+        file_like.seek(0)
+        original_file_content.seek(0)
 
-    if not audio_file:
-        raise RuntimeError("Failed to load audio file with mutagen.")
+        # Attempt to read the audio file with mutagen
+        audio_file = MutagenFile(file_like)
+        if not audio_file:
+            raise RuntimeError("Failed to load audio file with mutagen.")
+        
+        logger.debug(f"Applying ReplayGain metadata: gain={gain}, peak={peak}, format={file_format}")
 
-    logger.debug(f"Applying ReplayGain metadata: gain={gain}, peak={peak}, format={file_format}")
+        if file_format == "mp3":
+            if not audio_file.tags:
+                audio_file.add_tags()
 
-    if file_format == "mp3":
-        if not audio_file.tags:
-            audio_file.add_tags()
+            existing_gain_tags = audio_file.tags.getall("TXXX:replaygain_track_gain")
+            existing_peak_tags = audio_file.tags.getall("TXXX:replaygain_track_peak")
 
-        existing_gain_tags = audio_file.tags.getall("TXXX:replaygain_track_gain")
-        existing_peak_tags = audio_file.tags.getall("TXXX:replaygain_track_peak")
+            for tag in existing_gain_tags:
+                audio_file.tags.delall(tag.FrameID)
+            for tag in existing_peak_tags:
+                audio_file.tags.delall(tag.FrameID)
 
-        for tag in existing_gain_tags:
-            audio_file.tags.delall(tag.FrameID)
-        for tag in existing_peak_tags:
-            audio_file.tags.delall(tag.FrameID)
+            gain_tag = TXXX(encoding=3, desc="replaygain_track_gain", text=f"{gain:.2f} dB")
+            peak_tag = TXXX(encoding=3, desc="replaygain_track_peak", text=f"{peak:.6f}")
+            audio_file.tags.add(gain_tag)
+            audio_file.tags.add(peak_tag)
+        elif file_format == "flac":
+            audio_file["replaygain_track_gain"] = f"{gain:.2f} dB"
+            audio_file["replaygain_track_peak"] = f"{peak:.6f}"
+        elif file_format == "opus" and r128_track_gain is not None and r128_album_gain is not None:
+            audio_file["R128_TRACK_GAIN"] = str(r128_track_gain)
+            audio_file["R128_ALBUM_GAIN"] = str(r128_album_gain)
+        else:
+            raise NotImplementedError(f"ReplayGain application for {file_format} not implemented.")
 
-        gain_tag = TXXX(encoding=3, desc="replaygain_track_gain", text=f"{gain:.2f} dB")
-        peak_tag = TXXX(encoding=3, desc="replaygain_track_peak", text=f"{peak:.6f}")
-        audio_file.tags.add(gain_tag)
-        audio_file.tags.add(peak_tag)
-    elif file_format == "flac":
-        audio_file["replaygain_track_gain"] = f"{gain:.2f} dB"
-        audio_file["replaygain_track_peak"] = f"{peak:.6f}"
-    elif file_format == "opus" and r128_track_gain is not None and r128_album_gain is not None:
-        audio_file["R128_TRACK_GAIN"] = str(r128_track_gain)
-        audio_file["R128_ALBUM_GAIN"] = str(r128_album_gain)
-    else:
-        raise NotImplementedError(f"ReplayGain application for {file_format} not implemented.")
+        updated_content = BytesIO()
+        audio_file.save(updated_content)
+        updated_content.seek(0)  # Ensure the pointer is at the start after saving
 
-    updated_content = BytesIO()
-    audio_file.save(updated_content)
-    updated_content.seek(0)  # Ensure the pointer is at the start after saving
+        # Validate the updated file content
+        if updated_content.getbuffer().nbytes <= 4:
+            logger.error("File size after applying ReplayGain is invalid (<= 4 bytes).")
+            raise ValueError("File size after applying ReplayGain is invalid (<= 4 bytes).")
 
-    logger.debug(f"Post replaygain application file size: {updated_content.getbuffer().nbytes} bytes")
+        final_size = updated_content.getbuffer().nbytes
+        logger.debug(f"Post ReplayGain application file size: {final_size} bytes")
+        
+        return updated_content.getvalue()
 
-    return updated_content.getvalue()
+    except Exception as e:
+        # Log the full stack trace for the error
+        import traceback
+        logger.error(f"Failed to apply ReplayGain metadata: {e}")
+        logger.debug(traceback.format_exc())
+        
+        # Return the original file content to ensure the process continues
+        original_file_content.seek(0)
+        return original_file_content.getvalue()
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     """Process ReplayGain for a given audio file content.

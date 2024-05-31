@@ -54,25 +54,6 @@ class Track(dict):
 
         return self.content.getvalue()
 
-    def analyze_replaygain(self) -> 'Track':
-        """Analyzes the track's ReplayGain and updates its metadata.
-
-        Returns:
-            self: The Track instance with updated ReplayGain metadata.
-        """
-        if self.content is None:
-            raise ValueError("Track content is not set. Ensure the track is downloaded first.")
-
-        filename = self['Path']
-        file_format = filename.split('.')[-1].lower()
-
-        self.content.seek(0)
-        updated_content = process_replaygain(self.content.read(), file_format)
-
-        self.content = BytesIO(updated_content)
-        self.content.seek(0)  # Ensure the content pointer is at the start for future reads
-        return self
-
     def _check_and_apply_replaygain(self) -> None:
         file_format = self['Path'].split('.')[-1].lower()
 
