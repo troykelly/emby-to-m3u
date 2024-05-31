@@ -1,70 +1,82 @@
 import os
-import requests
+import time
 import logging
-from tqdm import tqdm
 from base64 import b64encode
+from typing import Dict, List, Union, Optional, Any
+from io import BytesIO
+
+import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from io import BytesIO
+from tqdm import tqdm
+
 from replaygain.main import has_replaygain_metadata
-import time
 
 logger = logging.getLogger(__name__)
+
 
 class AzuraCastSync:
     """Client for interacting with the AzuraCast API for syncing playlists."""
 
-    def __init__(self):
-        """Initializes the Azuracast client with environment variables."""
-        self.host = os.getenv('AZURACAST_HOST')
-        self.api_key = os.getenv('AZURACAST_API_KEY')
-        self.station_id = os.getenv('AZURACAST_STATIONID')
+    def __init__(self) -> None:
+        """Initializes the AzuraCast client with environment variables."""
+        self.host: str = os.getenv("AZURACAST_HOST", "")
+        self.api_key: str = os.getenv("AZURACAST_API_KEY", "")
+        self.station_id: str = os.getenv("AZURACAST_STATIONID", "")
 
-    def _get_session(self):
+    def _get_session(self) -> requests.Session:
         """Creates a new session with retry strategy.
 
         Returns:
-            requests.Session: Configured session object.
+            Configured session object.
         """
-        session = requests.Session()
-        retries = Retry(
-            total=1,  # Retry strategy within a single request
+        session: requests.Session = requests.Session()
+        retries: Retry = Retry(
+            total=1,
             backoff_factor=1,
             status_forcelist=[500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
         )
-        adapter = HTTPAdapter(max_retries=retries)
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
+        adapter: HTTPAdapter = HTTPAdapter(max_retries=retries)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
         return session
 
-    def _perform_request(self, method, endpoint, headers=None, params=None, data=None, json=None):
+    def _perform_request(
+        self,
+        method: str,
+        endpoint: str,
+        headers: Optional[Dict[str, str]] = None,
+        params: Optional[Dict[str, Union[str, int]]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        json: Optional[Dict[str, Any]] = None,
+    ) -> requests.Response:
         """Performs an HTTP request with connection handling and retry logic.
 
         Args:
-            method (str): HTTP method (GET, POST, PUT, DELETE).
-            endpoint (str): API endpoint.
-            headers (dict, optional): Request headers.
-            params (dict, optional): URL parameters.
-            data (dict, optional): Data to be sent in the body of the request.
-            json (dict, optional): JSON data to be sent in the body of the request.
+            method: HTTP method (GET, POST, PUT, DELETE).
+            endpoint: API endpoint.
+            headers: Request headers.
+            params: URL parameters.
+            data: Data to be sent in the body of the request.
+            json: JSON data to be sent in the body of the request.
 
         Returns:
-            requests.Response: The response object if successful, raises an exception otherwise.
+            The response object if successful.
 
         Raises:
             requests.exceptions.RequestException: If the HTTP request encounters an error.
         """
-        url = f"{self.host}/api{endpoint}"
+        url: str = f"{self.host}/api{endpoint}"
         headers = headers or {}
         headers.update({"X-API-Key": self.api_key})
 
-        max_attempts = 6
-        timeout = 240  # Increased timeout for larger file uploads
+        max_attempts: int = 6
+        timeout: int = 240
 
         for attempt in range(1, max_attempts + 1):
-            session = None
-            response = None
+            session: Optional[requests.Session] = None
+            response: Optional[requests.Response] = None
             try:
                 session = self._get_session()
                 logger.debug("Attempt %d: Making request to %s", attempt, url)
@@ -75,23 +87,42 @@ class AzuraCastSync:
                     params=params,
                     data=data,
                     json=json,
-                    timeout=timeout
+                    timeout=timeout,
                 )
                 response.raise_for_status()
 
                 if response.status_code == 413:
-                    logger.warning("Attempt %d: Request to %s failed due to size limit. Retrying...", attempt, url)
+                    logger.warning(
+                        "Attempt %d: Request to %s failed due to size limit. Retrying...",
+                        attempt,
+                        url,
+                    )
                     time.sleep(2 ** attempt)
                     continue  # Retry on 413 error
 
                 return response
 
-            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                logger.warning("Attempt %d: Request to %s failed: %s. Retrying...", attempt, url, e)
+            except (
+                requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as e:
+                logger.warning(
+                    "Attempt %d: Request to %s failed: %s. Retrying...",
+                    attempt,
+                    url,
+                    e,
+                )
                 time.sleep(2 ** attempt)
             except requests.exceptions.RequestException as e:
-                response_text = response.text if response else "No response"
-                logger.error("Attempt %d: Request to %s failed: %s - Response: %s", attempt, url, e, response_text)
+                response_text: str = response.text if response else "No response"
+                logger.error(
+                    "Attempt %d: Request to %s failed: %s - Response: %s",
+                    attempt,
+                    url,
+                    e,
+                    response_text,
+                )
                 raise e
             finally:
                 if session:
@@ -100,298 +131,355 @@ class AzuraCastSync:
         logger.error("Request to %s failed after %d attempts", url, max_attempts)
         raise requests.exceptions.RequestException(f"Failed after {max_attempts} attempts")
 
-    def get_known_tracks(self):
-        """Retrieves a list of all known tracks in Azuracast.
+    def get_known_tracks(self) -> List[Dict[str, Any]]:
+        """Retrieves a list of all known tracks in AzuraCast.
 
         Returns:
-            list: List of dictionaries containing the known files metadata.
+            List of dictionaries containing the known files' metadata.
         """
-        endpoint = f"/station/{self.station_id}/files"
-        response = self._perform_request("GET", endpoint)
+        endpoint: str = f"/station/{self.station_id}/files"
+        response: requests.Response = self._perform_request("GET", endpoint)
         return response.json()  # Ensure the JSON content is returned
 
-    def check_file_in_azuracast(self, known_tracks, track):
-        """Checks if a file with the same metadata exists in Azuracast.
+    def check_file_in_azuracast(self, known_tracks: List[Dict[str, Any]], track: Dict[str, Any]) -> bool:
+        """Checks if a file with the same metadata exists in AzuraCast.
 
         Args:
-            known_tracks (list): List of known file metadata.
-            track (Track): The track object to check.
+            known_tracks: List of known file metadata.
+            track: The track object to check.
 
         Returns:
-            bool: True if the file is known to Azuracast, False otherwise.
+            True if the file is known to AzuraCast, False otherwise.
         """
-        artist = track.get('AlbumArtist')
-        album = track.get('Album')
-        title = track.get('Name')
-        length = str(track.get('RunTimeTicks', 0) // 10000000)  # Convert ticks to seconds
+        artist: str = track.get("AlbumArtist", "")
+        album: str = track.get("Album", "")
+        title: str = track.get("Name", "")
+        length: str = str(track.get("RunTimeTicks", 0) // 10000000)  # Convert ticks to seconds
 
         for known_track in known_tracks:
-            if (known_track.get('artist') == artist 
-                    and known_track.get('album') == album 
-                    and known_track.get('title') == title):
-                track.azuracast_file_id = known_track['id']
-                logger.debug(f"File '{title}' already exists in Azuracast with ID '{track.azuracast_file_id}'")
+            if (
+                known_track.get("artist") == artist
+                and known_track.get("album") == album
+                and known_track.get("title") == title
+            ):
+                track["azuracast_file_id"] = known_track["id"]
+                logger.debug(
+                    "File '%s' already exists in Azuracast with ID '%s'",
+                    title,
+                    track["azuracast_file_id"],
+                )
                 return True
-        logger.debug(f"File '{title}' does not exist in Azuracast")
+        logger.debug("File '%s' does not exist in Azuracast", title)
         return False
 
-    def upload_file_to_azuracast(self, file_content, file_key):
-        """Uploads a file to Azuracast.
+    def upload_file_to_azuracast(self, file_content: bytes, file_key: str) -> Dict[str, Any]:
+        """Uploads a file to AzuraCast.
 
         Args:
-            file_content (bytes or BytesIO): Content of the file to be uploaded.
-            file_key (str): Key (name) of the file to be uploaded.
+            file_content: Content of the file to be uploaded.
+            file_key: Key (name) of the file to be uploaded.
 
         Returns:
-            dict: Response from the server, commonly including the uploaded file's metadata.
+            Response from the server, commonly including the uploaded file's metadata.
         """
-        endpoint = f"/station/{self.station_id}/files"
-
-        if isinstance(file_content, BytesIO):
-            file_content.seek(0)  # Ensure pointer is at the start
-            file_content = file_content.read()
+        endpoint: str = f"/station/{self.station_id}/files"
 
         if not file_content or not file_key:
             logger.error("Missing filename or fileobj argument")
             raise ValueError("Missing filename or fileobj argument")
 
-        b64_content = b64encode(file_content).decode("utf-8")
-        data = {"path": file_key, "file": b64_content}
+        b64_content: str = b64encode(file_content).decode("utf-8")
+        data: Dict[str, Union[str, bytes]] = {"path": file_key, "file": b64_content}
 
-        file_size = self._sizeof_fmt(len(file_content))
+        file_size: str = self._sizeof_fmt(len(file_content))
         logger.debug("Uploading file: %s, Size: %s", file_key, file_size)
 
-        response = self._perform_request("POST", endpoint, json=data)
+        response: requests.Response = self._perform_request("POST", endpoint, json=data)
         return response.json()
 
-    def get_playlist(self, playlist_name):
-        """Retrieves a playlist by name from Azuracast.
+    def get_playlist(self, playlist_name: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a playlist by name from AzuraCast.
 
         Args:
-            playlist_name (str): Name of the playlist.
+            playlist_name: Name of the playlist.
 
         Returns:
-            dict: Playlist information if found, None otherwise.
+            Playlist information if found, None otherwise.
         """
-        endpoint = f"/station/{self.station_id}/playlists"
-        playlists = self._perform_request("GET", endpoint)
+        endpoint: str = f"/station/{self.station_id}/playlists"
+        response: requests.Response = self._perform_request("GET", endpoint)
+        playlists: List[Any] = response.json()
         for playlist in playlists:
-            if playlist['name'] == playlist_name:
+            if playlist["name"] == playlist_name:
                 return playlist
         return None
 
-    def create_playlist(self, playlist_name):
-        """Creates a new playlist in Azuracast.
+    def create_playlist(self, playlist_name: str) -> Dict[str, Any]:
+        """Creates a new playlist in AzuraCast.
 
         Args:
-            playlist_name (str): Name of the new playlist.
+            playlist_name: Name of the new playlist.
 
         Returns:
-            dict: Information of the created playlist.
+            Information of the created playlist.
         """
-        endpoint = f"/station/{self.station_id}/playlists"
-        data = {"name": playlist_name, "type": "default"}
-        return self._perform_request("POST", endpoint, json=data)
+        endpoint: str = f"/station/{self.station_id}/playlists"
+        data: Dict[str, str] = {"name": playlist_name, "type": "default"}
+        response: requests.Response = self._perform_request("POST", endpoint, json=data)
+        return response.json()
 
-    def empty_playlist(self, playlist_id):
+    def empty_playlist(self, playlist_id: int) -> Dict[str, Any]:
         """Empties a playlist.
 
         Args:
-            playlist_id (int): ID of the playlist to be emptied.
+            playlist_id: ID of the playlist to be emptied.
 
         Returns:
-            dict: JSON response from the server.
+            JSON response from the server.
         """
-        endpoint = f"/station/{self.station_id}/playlist/{playlist_id}/empty"
-        return self._perform_request('DELETE', endpoint)
+        endpoint: str = f"/station/{self.station_id}/playlist/{playlist_id}/empty"
+        response: requests.Response = self._perform_request("DELETE", endpoint)
+        return response.json()
 
-    def add_to_playlist(self, file_id, playlist_id):
+    def add_to_playlist(self, file_id: str, playlist_id: int) -> Dict[str, Any]:
         """Adds a file to a playlist.
 
         Args:
-            file_id (int): ID of the file to be added.
-            playlist_id (int): ID of the playlist.
+            file_id: ID of the file to be added.
+            playlist_id: ID of the playlist.
 
         Returns:
-            dict: JSON response from the server.
+            JSON response from the server.
         """
-        endpoint = f"/station/{self.station_id}/file/{file_id}"
-        data = {"playlists": [playlist_id]}
-        return self._perform_request('PUT', endpoint, json=data)
+        endpoint: str = f"/station/{self.station_id}/file/{file_id}"
+        data: Dict[str, List[int]] = {"playlists": [playlist_id]}
+        response: requests.Response = self._perform_request("PUT", endpoint, json=data)
+        return response.json()
 
-    def clear_playlist_by_name(self, playlist_name):
+    def clear_playlist_by_name(self, playlist_name: str) -> None:
         """Clears the existing AzuraCast playlist if it exists by name.
 
         Args:
-            playlist_name (str): Name of the playlist.
+            playlist_name: Name of the playlist.
         """
-        playlist = self.get_playlist(playlist_name)
+        playlist: Optional[Dict[str, Any]] = self.get_playlist(playlist_name)
         if playlist:
-            self.empty_playlist(playlist['id'])
-            
-    def generate_file_path(self, track):
+            self.empty_playlist(playlist["id"])
+
+    def generate_file_path(self, track: Dict[str, Any]) -> str:
         """Generate file path used to store file in AzuraCast."""
-        artist_name = track.get('AlbumArtist', 'Unknown Artist')
-        album_name = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
-        disk_number = track.get('ParentIndexNumber', 1)
-        track_number = track.get('IndexNumber', 1)
-        title = track.get('Name', 'Unknown Title')
-        file_path = track.get('Path')
-        file_extension = os.path.splitext(file_path)[1]
-        
+        artist_name: str = track.get("AlbumArtist", "Unknown Artist")
+        album_name: str = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+        disk_number: int = track.get("ParentIndexNumber", 1)
+        track_number: int = track.get("IndexNumber", 1)
+        title: str = track.get("Name", "Unknown Title")
+        file_path: str = track.get("Path", "")
+        file_extension: str = os.path.splitext(file_path)[1]
+
         return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
 
-    def upload_file_and_set_track_id(self, track):
+    def upload_file_and_set_track_id(self, track: Dict[str, Any]) -> bool:
         """Upload file to Azuracast and set the track's azuracast_file_id.
 
         Args:
             track: Track instance to upload.
 
         Returns:
-            bool: True if file was successfully uploaded or already exists in Azuracast, False otherwise.
+            True if file was successfully uploaded or already exists in Azuracast, False otherwise.
         """
         try:
-            known_tracks = self.get_known_tracks()
+            known_tracks: List[Dict[str, Any]] = self.get_known_tracks()
 
             if not self.check_file_in_azuracast(known_tracks, track):
                 # File does not exist, proceed with upload
-                file_content = track.download()
-                upload_response = self.upload_file_to_azuracast(file_content, track.get('Path'))
-                track.azuracast_file_id = upload_response.get("id")
-                logger.debug("Uploaded file '%s' to Azuracast with ID '%s'", track['Name'], track.azuracast_file_id)
+                file_content: bytes = track["download"]()
+                upload_response: Dict[str, Any] = self.upload_file_to_azuracast(
+                    file_content, track.get("Path", "")
+                )
+                track["azuracast_file_id"] = upload_response.get("id")
+                logger.debug(
+                    "Uploaded file '%s' to Azuracast with ID '%s'",
+                    track["Name"],
+                    track["azuracast_file_id"],
+                )
             else:
                 # File exists, check if it has ReplayGain metadata
-                track_id = track.azuracast_file_id  # This is set by check_file_in_azuracast
+                track_id: str = track["azuracast_file_id"]
 
-                file_content = self.download_file_from_azuracast(track_id)
-                content = BytesIO(file_content)
+                file_content: bytes = self.download_file_from_azuracast(track_id)
+                content: BytesIO = BytesIO(file_content)
 
-                if not has_replaygain_metadata(content, os.path.splitext(track['Path'])[1]):
-                    logger.debug("File '%s' does not have ReplayGain metadata, deleting it from Azuracast.", track['Name'])
+                if not has_replaygain_metadata(
+                    content, os.path.splitext(track["Path"])[1]
+                ):
+                    logger.debug(
+                        "File '%s' does not have ReplayGain metadata, deleting it from Azuracast.",
+                        track["Name"],
+                    )
 
                     if self.delete_file_from_azuracast(track_id):
                         # Re-analyze and upload with ReplayGain metadata
-                        new_file_content = track.download()
-                        upload_response = self.upload_file_to_azuracast(new_file_content, track.get('Path'))
+                        new_file_content: bytes = track["download"]()
+                        upload_response = self.upload_file_to_azuracast(
+                            new_file_content, track.get("Path", "")
+                        )
                         if upload_response and "id" in upload_response:
-                            track.azuracast_file_id = upload_response["id"]
-                            logger.debug("Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'", track['Name'], track.azuracast_file_id)
+                            track["azuracast_file_id"] = upload_response["id"]
+                            logger.debug(
+                                "Re-uploaded file '%s' to Azuracast with ReplayGain ID '%s'",
+                                track["Name"],
+                                track["azuracast_file_id"],
+                            )
                         else:
-                            logger.error("Failed to upload file '%s' after deletion", track['Name'])
+                            logger.error(
+                                "Failed to upload file '%s' after deletion",
+                                track["Name"],
+                            )
                     else:
-                        logger.error("Failed to delete file '%s' from Azuracast, cannot re-upload", track['Name'])
+                        logger.error(
+                            "Failed to delete file '%s' from Azuracast, cannot re-upload",
+                            track["Name"],
+                        )
                 else:
-                    logger.debug("File '%s' already exists in Azuracast with ID '%s' and has ReplayGain metadata", track['Name'], track.azuracast_file_id)
+                    logger.debug(
+                        "File '%s' already exists in Azuracast with ID '%s' and has ReplayGain metadata",
+                        track["Name"],
+                        track["azuracast_file_id"],
+                    )
 
-            return bool(track.azuracast_file_id)
+            return bool(track.get("azuracast_file_id"))
         except Exception as e:
-            logger.error("Error uploading '%s' to Azuracast: %s", track['Name'], e)
+            logger.error("Error uploading '%s' to Azuracast: %s", track["Name"], e)
             return False
 
-    def download_file_from_azuracast(self, track_id):
+    def download_file_from_azuracast(self, track_id: str) -> bytes:
         """Downloads a file from Azuracast.
-        
+
         Args:
-            track_id (str): ID of the file to download.
-        
+            track_id: ID of the file to download.
+
         Returns:
-            bytes: Content of the file.
+            Content of the file.
         """
-        endpoint = f"/station/{self.station_id}/file/{track_id}/play"
-        response = self._perform_request("GET", endpoint)
+        endpoint: str = f"/station/{self.station_id}/file/{track_id}/play"
+        response: requests.Response = self._perform_request("GET", endpoint)
         return response.content
 
-    def delete_file_from_azuracast(self, track_id):
+    def delete_file_from_azuracast(self, track_id: str) -> bool:
         """Deletes a file from Azuracast.
 
         Args:
-            track_id (str): ID of the file to delete.
+            track_id: ID of the file to delete.
 
         Returns:
-            bool: True if the file was successfully deleted, False otherwise.
+            True if the file was successfully deleted, False otherwise.
         """
-        endpoint = f"/station/{self.station_id}/file/{track_id}"
-        response = self._perform_request("DELETE", endpoint)
-        
+        endpoint: str = f"/station/{self.station_id}/file/{track_id}"
+        response: requests.Response = self._perform_request("DELETE", endpoint)
+
         if response.status_code == 200:
-            result = response.json()
+            result: Dict[str, Any] = response.json()
             if result.get("success") is True:
                 logger.debug("Successfully deleted file with ID '%s' from Azuracast", track_id)
                 return True
-            else:
-                logger.error("Failed to delete file with ID '%s' from Azuracast: %s", track_id, result.get("message"))
+            logger.error(
+                "Failed to delete file with ID '%s' from Azuracast: %s",
+                track_id,
+                result.get("message"),
+            )
         else:
-            logger.error("Failed to get a valid response for deleting file with ID '%s' from Azuracast: HTTP %s", track_id, response.status_code)
-        
+            logger.error(
+                "Failed to get a valid response for deleting file with ID '%s' from Azuracast: HTTP %s",
+                track_id,
+                response.status_code,
+            )
+
         return False
 
-    def upload_playlist(self, playlist):
+    def upload_playlist(self, playlist: List[Dict[str, Any]]) -> bool:
         """Uploads tracks to AzuraCast and sets their azuracast_file_id without updating the playlist.
 
         Args:
-            playlist (list): List of Track instances to upload.
+            playlist: List of Track instances to upload.
+
+        Returns:
+            True if the playlist upload was successful.
         """
-        with tqdm(total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track") as pbar_upload_playlist:
+        with tqdm(
+            total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track"
+        ) as pbar_upload_playlist:
             for track in playlist:
-                artist_name = track.get('AlbumArtist', 'Unknown Artist')
-                title = track.get('Name', 'Unknown Title')
+                artist_name: str = track.get("AlbumArtist", "Unknown Artist")
+                title: str = track.get("Name", "Unknown Title")
                 pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
                 if not self.upload_file_and_set_track_id(track):
-                    logger.warning(f"Failed to upload '{track['Name']}' to Azuracast")
+                    logger.warning("Failed to upload '%s' to Azuracast", track["Name"])
                 pbar_upload_playlist.update(1)
         return True
 
-    def sync_playlist(self, playlist_name, playlist):
+    def sync_playlist(self, playlist_name: str, playlist: List[Dict[str, Any]]) -> None:
         """Syncs the playlist to AzuraCast by clearing the playlist and adding tracks by their IDs.
 
         Args:
-            playlist_name (str): Name of the playlist.
-            playlist (list): List of Track instances to add to the playlist.
+            playlist_name: Name of the playlist.
+            playlist: List of Track instances to add to the playlist.
         """
         self.clear_playlist_by_name(playlist_name)
 
         with tqdm(total=len(playlist), desc=f"Syncing playlist '{playlist_name}'", unit="track") as pbar:
             for track in playlist:
-                if track.azuracast_file_id:
-                    playlist_info = self.get_playlist(playlist_name)
+                if "azuracast_file_id" in track:
+                    playlist_info: Optional[Dict[str, Any]] = self.get_playlist(
+                        playlist_name
+                    )
                     if playlist_info:
-                        self.add_to_playlist(track.azuracast_file_id, playlist_info['id'])
-                        logger.debug("Added '%s' to '%s' playlist in Azuracast.", track['Name'], playlist_name)
+                        self.add_to_playlist(track["azuracast_file_id"], playlist_info["id"])
+                        logger.debug(
+                            "Added '%s' to '%s' playlist in Azuracast.",
+                            track["Name"],
+                            playlist_name,
+                        )
                     else:
-                        created_playlist = self.create_playlist(playlist_name)
-                        self.add_to_playlist(track.azuracast_file_id, created_playlist['id'])
-                        logger.debug("Created and added '%s' to new '%s' playlist in Azuracast.", track['Name'], playlist_name)
+                        created_playlist: Dict[str, Any] = self.create_playlist(
+                            playlist_name
+                        )
+                        self.add_to_playlist(track["azuracast_file_id"], created_playlist["id"])
+                        logger.debug(
+                            "Created and added '%s' to new '%s' playlist in Azuracast.",
+                            track["Name"],
+                            playlist_name,
+                        )
                 else:
                     logger.warning(f"Skipping '{track['Name']}' as it has no AzuraCast ID.")
                 pbar.update(1)
 
-    def _find_azuracast_track_id(self, known_tracks, azuracast_file_path):
+    def _find_azuracast_track_id(self, known_tracks: List[Dict[str, Any]], azuracast_file_path: str) -> Optional[str]:
         """Finds the AzuraCast file ID based on the file path.
 
         Args:
-            known_tracks (list): List of known tracks.
-            azuracast_file_path (str): File path in AzuraCast.
+            known_tracks: List of known tracks.
+            azuracast_file_path: File path in AzuraCast.
 
         Returns:
-            str: Track ID if found, None otherwise.
+            Track ID if found, None otherwise.
         """
         for known_track in known_tracks:
-            if known_track['path'] == azuracast_file_path:
-                return known_track['id']
+            if known_track["path"] == azuracast_file_path:
+                return known_track["id"]
         return None
 
     @staticmethod
-    def _sizeof_fmt(num, suffix='B'):
+    def _sizeof_fmt(num: int, suffix: str = "B") -> str:
         """Converts file size to a readable format.
 
         Args:
-            num (int): File size in bytes.
-            suffix (str): Suffix for the unit of file size.
+            num: File size in bytes.
+            suffix: Suffix for the unit of file size.
 
         Returns:
-            str: Readable file size format.
+            Readable file size format.
         """
-        for unit in ['','K','M','G','T','P','E','Z']:
+        for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
             if abs(num) < 1024.0:
                 return f"{num:3.1f}{unit}{suffix}"
             num /= 1024.0
