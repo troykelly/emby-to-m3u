@@ -139,19 +139,22 @@ class AzuraCastSync:
         """Uploads a file to Azuracast.
 
         Args:
-            file_content (bytes): Content of the file to be uploaded.
+            file_content (bytes or BytesIO): Content of the file to be uploaded.
             file_key (str): Key (name) of the file to be uploaded.
 
         Returns:
             dict: Response from the server, commonly including the uploaded file's metadata.
         """
         endpoint = f"/station/{self.station_id}/files"
-        
-        # Ensure entire bytes content is correctly handled before encoding
+
         if isinstance(file_content, BytesIO):
-            file_content.seek(0)
+            file_content.seek(0)  # Ensure pointer is at the start
             file_content = file_content.read()
-            
+
+        if not file_content or not file_key:
+            logger.error("Missing filename or fileobj argument")
+            raise ValueError("Missing filename or fileobj argument")
+
         b64_content = b64encode(file_content).decode("utf-8")
         data = {"path": file_key, "file": b64_content}
 

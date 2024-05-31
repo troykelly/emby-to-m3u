@@ -1,6 +1,7 @@
 # src/replaygain/main.py
 
 import subprocess
+import logging
 from io import BytesIO
 from typing import Tuple, Optional
 from mutagen import File as MutagenFile
@@ -8,6 +9,8 @@ from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
 from mutagen.flac import FLAC
 from mutagen.oggopus import OggOpus
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, float]:
     """Calculate ReplayGain values for an audio file using ffmpeg.
@@ -92,6 +95,8 @@ def apply_replaygain(file_like: BytesIO, gain: float, peak: float, file_format: 
     updated_content = BytesIO()
     audio_file.save(updated_content)
     updated_content.seek(0)  # Ensure the pointer is at the start after saving
+    # Log file size of updated content
+    logger.debug(f"Post replaygain application file size: {len(updated_content.getvalue())} bytes")
     return updated_content.getvalue()
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
