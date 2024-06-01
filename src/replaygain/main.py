@@ -158,37 +158,23 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     file_like = BytesIO(file_content)
 
     if file_format == 'opus':
-        with tqdm(total=100, desc="Analyzing replaygain metadata", unit="%") as pbar:
-            pbar.update(25)
+        gain, peak = calculate_replaygain(file_like, file_format)
+        r128_track_gain = int((gain - 1.0) * 256)
+        r128_album_gain = r128_track_gain
 
-            gain, peak = calculate_replaygain(file_like, file_format)
-            r128_track_gain = int((gain - 1.0) * 256)
-            r128_album_gain = r128_track_gain
-            
-            pbar.set_description(f"Track R128 gain: {r128_track_gain}")
 
-            pbar.update(50)
-
-            try:
-                updated_content = apply_replaygain(file_like, gain, peak, file_format, r128_track_gain, r128_album_gain)
-            except Exception as e:
-                logger.error(f"Failed to apply ReplayGain metadata: {e}")
-                updated_content = file_content
-            pbar.update(25)
+        try:
+            updated_content = apply_replaygain(file_like, gain, peak, file_format, r128_track_gain, r128_album_gain)
+        except Exception as e:
+            logger.error(f"Failed to apply ReplayGain metadata: {e}")
+            updated_content = file_content
     else:
-        with tqdm(total=100, desc="Analyzing replaygain metadata", unit="%") as pbar:
-            pbar.update(25)
-
-            gain, peak = calculate_replaygain(file_like, file_format)
-            pbar.set_description(f"Track gain: {gain}")
-            pbar.update(50)
-
-            try:
-                updated_content = apply_replaygain(file_like, gain, peak, file_format)
-            except Exception as e:
-                logger.error(f"Failed to apply ReplayGain metadata: {e}")
-                updated_content = file_content
-            pbar.update(25)
+        gain, peak = calculate_replaygain(file_like, file_format)
+        try:
+            updated_content = apply_replaygain(file_like, gain, peak, file_format)
+        except Exception as e:
+            logger.error(f"Failed to apply ReplayGain metadata: {e}")
+            updated_content = file_content
 
     final_size = len(updated_content)
     logger.debug(f"Final post-replaygain file size: {final_size} bytes")
