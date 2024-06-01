@@ -289,7 +289,7 @@ class AzuraCastSync:
 
         return f"{artist_name}/{album_name}/{disk_number:02d} {track_number:02d} {title}{file_extension}"
 
-    def upload_file_and_set_track_id(self, track: Track) -> bool:
+    def upload_file_and_set_track_id(self, track: Track, pbar_upload_playlist: tqdm) -> bool:
         """Upload file to Azuracast and set the track's azuracast_file_id.
 
         Args:
@@ -298,10 +298,15 @@ class AzuraCastSync:
         Returns:
             True if file was successfully uploaded or already exists in Azuracast, False otherwise.
         """
+        
+        artist_name: str = track.get("AlbumArtist", "Unknown Artist")
+        title: str = track.get("Name", "Unknown Title")
+
         try:
             known_tracks: List[Dict[str, Any]] = self.get_known_tracks()
 
             if not self.check_file_in_azuracast(known_tracks, track):
+                pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
                 # File does not exist, proceed with upload
                 file_content: bytes = track.download()
                 upload_response: Dict[str, Any] = self.upload_file_to_azuracast(file_content, self.generate_file_path(track))
@@ -316,6 +321,7 @@ class AzuraCastSync:
                     logger.error("Failed to set azuracast_file_id for '%s'", track["Name"])
                     return False
             else:
+                pbar_upload_playlist.set_description(f"Existing '{title}' by '{artist_name}'")
                 # File exists, check if it has ReplayGain metadata
                 if not track["azuracast_file_id"]:
                     logger.error("azuracast_file_id is None for existing file '%s'", track["Name"])
@@ -330,10 +336,13 @@ class AzuraCastSync:
                         "File '%s' does not have ReplayGain metadata, deleting it from Azuracast.",
                         track["Name"],
                     )
-
+                    
+                    pbar_upload_playlist.set_description(f"Deleting '{title}' by '{artist_name}'")
+                    
                     if self.delete_file_from_azuracast(track_id):
                         # Re-analyze and upload with ReplayGain metadata
                         new_file_content: bytes = track.download()
+                        pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
                         upload_response = self.upload_file_to_azuracast(new_file_content, self.generate_file_path(track))
                         if upload_response and "id" in upload_response:
                             track["azuracast_file_id"] = upload_response["id"]
@@ -349,6 +358,7 @@ class AzuraCastSync:
                             )
                             return False
                     else:
+                        pbar_upload_playlist.set_description(f"Delete failed '{title}' by '{artist_name}'")
                         logger.error(
                             "Failed to delete file '%s' from Azuracast, cannot re-upload",
                             track["Name"],
@@ -361,6 +371,7 @@ class AzuraCastSync:
                         track["azuracast_file_id"],
                     )
 
+            pbar_upload_playlist.set_description(f"Complete '{title}' by '{artist_name}'")
             return True
         except Exception as e:
             logger.error("Error uploading '%s' to Azuracast: %s", track["Name"], e)
@@ -425,8 +436,8 @@ class AzuraCastSync:
             for track in playlist:
                 artist_name: str = track.get("AlbumArtist", "Unknown Artist")
                 title: str = track.get("Name", "Unknown Title")
-                pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
-                if not self.upload_file_and_set_track_id(track):
+                pbar_upload_playlist.set_description(f"Checking '{title}' by '{artist_name}'")
+                if not self.upload_file_and_set_track_id(track, pbar_upload_playlist):
                     logger.warning("Failed to upload '%s' to Azuracast", track["Name"])
                 pbar_upload_playlist.update(1)
         return True

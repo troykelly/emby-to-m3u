@@ -1,20 +1,34 @@
-import random
-import os
-from tqdm import tqdm
+
 import logging
-from typing import List, Dict, Any, Optional
+import os
+import random
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
+
+from tqdm import tqdm
+
+if TYPE_CHECKING:
+    from playlist.main import PlaylistManager
+    from lastfm.main import LastFM
+    from azuracast.main import AzuraCastSync
 
 logger = logging.getLogger(__name__)
 
 class RadioPlaylistGenerator:
-    def __init__(self, playlist_manager: Any, lastfm_client: Any, azuracast_sync: Any) -> None:
-        """Initializes the RadioPlaylistGenerator with PlaylistManager, LastFM client, and AzuraCast sync."""
+    def __init__(self, playlist_manager: 'PlaylistManager', lastfm_client: 'LastFM', azuracast_sync: 'AzuraCastSync') -> None:
+        """
+        Initializes the RadioPlaylistGenerator with PlaylistManager, LastFM client, and AzuraCast sync.
+
+        Args:
+            playlist_manager: An instance of PlaylistManager
+            lastfm_client: An instance of LastFM
+            azuracast_sync: An instance of AzuraCastSync
+        """
         self.playlist_manager = playlist_manager
         self.lastfm = lastfm_client
         self.azuracast_sync = azuracast_sync
-        self.playlists = self.load_playlists_from_env()
-        self.general_rejects = self.load_general_rejects()
-        self.specific_rejects = self.load_specific_rejects()
+        self.playlists: Dict[str, List[str]] = self.load_playlists_from_env()
+        self.general_rejects: Dict[str, List[str]] = self.load_general_rejects()
+        self.specific_rejects: Dict[str, List[str]] = self.load_specific_rejects()
 
     def load_playlists_from_env(self) -> Dict[str, List[str]]:
         """Load playlists and their corresponding genres from environment variables."""
@@ -49,18 +63,32 @@ class RadioPlaylistGenerator:
 
     @staticmethod
     def convert_env_key_to_name(key: str) -> str:
-        """Convert environment variable key to a proper playlist name."""
+        """Convert environment variable key to a proper playlist name.
+
+        Args:
+            key: Environment variable key to convert.
+
+        Returns:
+            Converted playlist name.
+        """
         name_parts = key[len("RADIO_PLAYLIST_"):].split('_')
         return ' '.join(word.capitalize() for word in name_parts)
 
-    def _get_random_track_by_genre(self, genre: str) -> Optional[Dict[str, Any]]:
-        """Returns a random track from the playlist manager that matches the specified genre."""
+    def _get_random_track_by_genre(self, genre: str) -> Optional[Dict[str, str]]:
+        """Return a random track from the playlist manager that matches the specified genre.
+
+        Args:
+            genre: Genre to filter tracks.
+
+        Returns:
+            A random track dictionary or None if no tracks are found.
+        """
         tracks_in_genre = self.playlist_manager.get_tracks_by_genre(genre)
         if not tracks_in_genre:
             return None
         return random.choice(tracks_in_genre)
 
-    def _get_similar_tracks(self, track: Dict[str, Any]) -> List[Dict[str, str]]:
+    def _get_similar_tracks(self, track: Dict[str, str]) -> List[Dict[str, str]]:
         """Retrieve similar tracks using the LastFM client.
 
         Args:
@@ -84,8 +112,16 @@ class RadioPlaylistGenerator:
         
         return similar_tracks
 
-    def _is_rejected(self, track: Dict[str, Any], playlist_name: str) -> bool:
-        """Check if a track should be rejected based on general and specific reject rules."""
+    def _is_rejected(self, track: Dict[str, str], playlist_name: str) -> bool:
+        """Check if a track should be rejected based on general and specific reject rules.
+
+        Args:
+            track: The track information dictionary.
+            playlist_name: The name of the playlist.
+
+        Returns:
+            True if the track is rejected, False otherwise.
+        """
         track_title = track.get('Name', '').lower()
         album_title = track.get('Album', '').lower()
         artist_name = track.get('AlbumArtist', '').lower()
@@ -111,10 +147,10 @@ class RadioPlaylistGenerator:
         """Remove year or decade filters from genre names.
         
         Args:
-            genres (list): List of genres with possible year/decade filters.
+            genres: List of genres with possible year/decade filters.
 
         Returns:
-            list: List of genres with filters removed.
+            List of genres with filters removed.
         """
         new_genres = []
         for genre in genres:
@@ -125,8 +161,8 @@ class RadioPlaylistGenerator:
                 new_genres.append(genre)
         return list(set(new_genres))
 
-    def generate_playlist(self, genres: List[str], min_duration: int, playlist_name: str) -> List[Dict[str, Any]]:
-        """Generates a radio playlist based on input genres, minimum duration, and playlist name.
+    def generate_playlist(self, genres: List[str], min_duration: int, playlist_name: str) -> List[Dict[str, str]]:
+        """Generate a radio playlist based on input genres, minimum duration, and playlist name.
 
         Args:
             genres: List of genres to include in the playlist.
@@ -137,31 +173,75 @@ class RadioPlaylistGenerator:
             Generated playlist.
         """
         def track_already_added(track_id: str) -> bool:
-            return track_id in [track['Id'] for track in playlist]
+            """Check if the track is already added to the playlist.
+
+            Args:
+                track_id: Track ID to check.
+
+            Returns:
+                True if track is already in playlist, False otherwise.
+            """
+            return track_id in {track['Id'] for track in playlist}
         
-        def is_track_rejected(track: Dict[str, Any]) -> bool:
+        def is_track_rejected(track: Dict[str, str]) -> bool:
+            """Check if the track is rejected.
+
+            Args:
+                track: Track information dictionary.
+
+            Returns:
+                True if the track is rejected, False otherwise.
+            """
             return self._is_rejected(track, playlist_name)
         
-        def select_random_genre(genres: List[str], ignored_genres: set) -> Optional[str]:
+        def select_random_genre(genres: List[str], ignored_genres: Set[str]) -> Optional[str]:
+            """Select a random genre from the list of genres excluding ignored genres.
+
+            Args:
+                genres: List of genres to select from.
+                ignored_genres: Set of genres to ignore.
+
+            Returns:
+                A random genre or None if no genres are available.
+            """
             available_genres = [genre for genre in genres if genre not in ignored_genres]
             return random.choice(available_genres) if available_genres else None
 
-        def add_track_to_playlist(track: Dict[str, Any], playlist: List[Dict[str, Any]]) -> None:
+        def add_track_to_playlist(track: Dict[str, str], playlist: List[Dict[str, str]]) -> None:
+            """Add a track to the playlist and update duration.
+
+            Args:
+                track: Track to add.
+                playlist: Playlist to add track to.
+            """
             playlist.append(track)
             seen_tracks.add(track['Id'])
             update_playlist_duration(track['RunTimeTicks'] // 10000000)  # Convert ticks to seconds
 
         def update_playlist_duration(duration: int) -> None:
+            """Update the total playlist duration.
+
+            Args:
+                duration: Duration to add in seconds.
+            """
             nonlocal playlist_duration
             playlist_duration += duration
         
         def refresh_genres(genres: List[str]) -> List[str]:
+            """Refresh the list of genres removing year/decade filters.
+
+            Args:
+                genres: List of genres.
+
+            Returns:
+                Refreshed list of genres.
+            """
             return self._remove_year_decade_filters(genres)
 
         playlist = []
         playlist_duration = 0
-        seen_tracks = set()
-        ignored_genres = set()
+        seen_tracks: Set[str] = set()
+        ignored_genres: Set[str] = set()
         retry_limit = 20
         retry_count = 0
 
@@ -177,26 +257,101 @@ class RadioPlaylistGenerator:
                     break
                 ignored_genres.clear()
                 continue
+            
+            # Add event to report
+            self.playlist_manager.report.add_event(
+                playlist_name,
+                'GENRE_SELECTED',
+                '',
+                '',
+                '',
+                genre,
+                '',
+                '',
+                '',
+            )
 
             initial_track = self._get_random_track_by_genre(genre)
             if not initial_track or track_already_added(initial_track['Id']) or is_track_rejected(initial_track):
                 ignored_genres.add(genre)
+                # Add event to report
+                self.playlist_manager.report.add_event(
+                    playlist_name,
+                    'GENRE_IGNORED',
+                    '',
+                    '',
+                    '',
+                    genre,
+                    '',
+                    '',
+                    '',
+                )                
                 retry_count += 1
                 continue
 
             retry_count = 0  # Reset retry count on successful track addition
             add_track_to_playlist(initial_track, playlist)
+            # Add event to report
+            self.playlist_manager.report.add_event(
+                playlist_name,
+                'TRACK_ADDED',
+                '',
+                initial_track.get('AlbumArtist', ''),
+                initial_track.get('Name', ''),
+                genre,
+                '',
+                '',
+                '',
+            )            
 
             candidate_tracks = self._get_similar_tracks(initial_track)
+            self.playlist_manager.report.add_event(
+                playlist_name,
+                'SIMILAR_TRACKS_FETCHED',
+                f"Found {len(candidate_tracks)} similar tracks",
+                initial_track.get('AlbumArtist', ''),
+                initial_track.get('Name', ''),
+                genre,
+                '',
+                '',
+                '',
+            )                        
             for candidate in candidate_tracks:
                 if random.random() < 0.3:
                     break
 
-                similar_track = self.playlist_manager.get_track_by_title_and_artist(candidate['title'], candidate['artist'])
+                similar_track = self.playlist_manager.get_track_by_title_and_artist(
+                    candidate['title'], candidate['artist']
+                )
                 if similar_track and not track_already_added(similar_track['Id']) and not is_track_rejected(similar_track):
+                    self.playlist_manager.report.add_event(
+                        playlist_name,
+                        'SIMILAR_TRACK_ADDED',
+                        '',
+                        similar_track.get('AlbumArtist', ''),
+                        similar_track.get('Name', ''),
+                        genre,
+                        '',
+                        '',
+                        '',
+                    )                    
                     add_track_to_playlist(similar_track, playlist)
 
-                if not candidate_tracks:
-                    genres = refresh_genres(genres)
+            if not candidate_tracks:
+                self.playlist_manager.report.add_event(
+                    playlist_name,
+                    'GENRES_EXHAUSTED',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                )                
+                genres = refresh_genres(genres)
 
         return playlist
+
+if __name__ == "__main__":
+    pass  # This is here to denote where any module-level code could be added, if necessary.
