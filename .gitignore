@@ -168,6 +168,9 @@ cython_debug/
 /test.flac
 /test.opus
 /test.mp3
+/post-test.mp3
+/post-test.flac
+/post-test.opus
 
 # macOS General
 .DS_Store

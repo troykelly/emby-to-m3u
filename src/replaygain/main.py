@@ -71,67 +71,77 @@ def apply_replaygain(
         # Create a deep copy of the original file for fallback
         original_file_content = BytesIO(file_like.getvalue())
         file_like.seek(0)
+        logger.debug("Original file content length: %d bytes", len(file_like.getvalue()))
 
         # Attempt to read the audio file with mutagen
         audio_file = MutagenFile(file_like)
         if not audio_file:
             raise RuntimeError("Failed to load audio file with mutagen.")
-        
+        logger.debug(f"Successfully loaded file with mutagen. Format: {file_format}")
+
         logger.debug(f"Applying ReplayGain metadata: gain={gain}, peak={peak}, format={file_format}")
 
         if file_format == "mp3":
             if not audio_file.tags:
+                logger.debug("Adding tags to the MP3 file.")
                 audio_file.add_tags()
-
-            # Clear existing gain and peak tags
+            
+            # Clear existing gain and peak tags if they exist
+            tags_cleared = False
             for tag in audio_file.tags.getall("TXXX:replaygain_track_gain"):
                 audio_file.tags.delall(tag.FrameID)
+                tags_cleared = True
             for tag in audio_file.tags.getall("TXXX:replaygain_track_peak"):
                 audio_file.tags.delall(tag.FrameID)
+                tags_cleared = True
+            if tags_cleared:
+                logger.debug("Cleared existing ReplayGain tags from the MP3 file.")
 
             gain_tag = TXXX(encoding=3, desc="replaygain_track_gain", text=f"{gain:.2f} dB")
             peak_tag = TXXX(encoding=3, desc="replaygain_track_peak", text=f"{peak:.6f}")
             audio_file.tags.add(gain_tag)
             audio_file.tags.add(peak_tag)
+            logger.debug("Added ReplayGain tags to the MP3 file.")
 
         elif file_format == "flac":
             assert isinstance(audio_file, FLAC)  # Type hint for clarity
             audio_file["replaygain_track_gain"] = f"{gain:.2f} dB"
             audio_file["replaygain_track_peak"] = f"{peak:.6f}"
+            logger.debug("Added ReplayGain tags to the FLAC file.")
 
-            # Explicitly handle FLAC file header:
+            # Explicitly handle FLAC file header
             recoverable_file_content = BytesIO()
             file_like.seek(0)
             recoverable_file_content.write(file_like.read())
             recoverable_file_content.seek(0)
-
             audio_file.save(recoverable_file_content)
             recoverable_file_content.seek(0)
-
             if recoverable_file_content.getbuffer().nbytes <= 4:
                 logger.error("File size after applying ReplayGain is invalid (<= 4 bytes).")
                 raise ValueError("File size after applying ReplayGain is invalid (<= 4 bytes).")
-
+            logger.debug("Successfully saved FLAC file with ReplayGain metadata.")
             return recoverable_file_content.getvalue()
 
         elif file_format == "opus" and r128_track_gain is not None and r128_album_gain is not None:
             assert isinstance(audio_file, OggOpus)  # Type hint for clarity
             audio_file["R128_TRACK_GAIN"] = str(r128_track_gain)
             audio_file["R128_ALBUM_GAIN"] = str(r128_album_gain)
+            logger.debug("Added R128 tags to the Opus file.")
 
         else:
+            logger.error(f"ReplayGain application for file format {file_format} is not implemented.")
             raise NotImplementedError(f"ReplayGain application for {file_format} not implemented.")
+        
         # Save to a BytesIO object
         updated_content = BytesIO()
         audio_file.save(updated_content)
         updated_content.seek(0)  # Ensure the pointer is at the start after saving
 
         # Validate the updated file content
-        if updated_content.getbuffer().nbytes <= 4:
+        final_size = updated_content.getbuffer().nbytes
+        if final_size <= 4:
             logger.error("File size after applying ReplayGain is invalid (<= 4 bytes).")
             raise ValueError("File size after applying ReplayGain is invalid (<= 4 bytes).")
-
-        final_size = updated_content.getbuffer().nbytes
         logger.debug(f"Post ReplayGain application file size: {final_size} bytes")
 
         return updated_content.getvalue()
