@@ -1,55 +1,74 @@
 # src/replaygain/main.py
 
-import subprocess
 import logging
+import json
 from io import BytesIO
 from typing import Tuple, Optional
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, TXXX
-from mutagen.flac import FLAC
-from mutagen.oggopus import OggOpus
-from tqdm import tqdm
+from subprocess import Popen, PIPE, CalledProcessError
+from math import isnan
 
 logger = logging.getLogger(__name__)
 
-def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, float]:
-    """Calculate ReplayGain values for an audio file using ffmpeg.
+def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, float, dict]:
+    """Calculate ReplayGain values for an audio file using ffmpeg with loudnorm filter.
 
     Args:
         file_like: A file-like object representing the audio content.
         file_format: The format of the audio file (e.g., 'mp3', 'flac', 'opus').
 
     Returns:
-        A tuple containing the gain (in dB) and peak values.
+        A tuple containing the gain (in dB), peak values, and the full parsed JSON data.
+
+    Raises:
+        RuntimeError: If ReplayGain calculation fails or could not be parsed.
     """
     command = [
-        "ffmpeg",
-        "-i", "pipe:0",
-        "-af", "replaygain",
-        "-f", "null", "-"
+        'ffmpeg',
+        '-hide_banner',
+        '-i', 'pipe:0',
+        '-af', 'loudnorm=I=-23:LRA=7:TP=-2:print_format=json',
+        '-f', 'null', '-'
     ]
 
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate(input=file_like.getbuffer())
+    process = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    out, err = process.communicate(input=file_like.getvalue())
 
-    gain = None
-    peak = None
+    if process.returncode != 0:
+        logger.error(f"ffmpeg command failed with error {process.returncode}: {err.decode('utf-8')}")
+        raise CalledProcessError(process.returncode, command, output=out, stderr=err)
 
-    for line in err.decode('utf-8').split('\n'):
-        if "track_gain" in line:
-            gain = float(line.split('=')[-1].strip().split()[0])
-        elif "track_peak" in line:
-            peak = float(line.split('=')[-1].strip().split()[0])
+    json_output = ""
+    json_lines = False
+    for line in err.decode('utf-8').splitlines():
+        line = line.strip()
+        if line == "{":
+            json_output += line
+            json_lines = True
+        elif json_lines:
+            json_output += line
+            if line == "}":
+                json_lines = False
 
-    if gain is None or peak is None:
+    if not json_output:
+        logger.error("No valid JSON output found from ffmpeg.")
+        raise RuntimeError("Failed to parse ReplayGain data from ffmpeg output.")
+
+    parsed_data = json.loads(json_output)
+
+    gain = float(parsed_data.get('input_i', 'nan'))
+    peak = float(parsed_data.get('input_tp', 'nan'))
+
+    if isnan(gain) or isnan(peak):
+        logger.error(f"Invalid gain or peak values found: gain={gain}, peak={peak}")
         raise RuntimeError("ReplayGain calculation failed or could not be parsed.")
 
-    return gain, peak
+    return gain, peak, parsed_data
 
 def ffmpeg_process(input_bytes, cmd):
     # Start the FFmpeg process
-    proc = subprocess.Popen(
-        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    proc = Popen(
+        cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE
     )
     # Pass the input data and get the output
     output, error = proc.communicate(input=input_bytes)
@@ -63,12 +82,13 @@ def apply_replaygain(
     peak: float,
     file_format: str,
     r128_track_gain: Optional[int] = None,
-    r128_album_gain: Optional[int] = None
+    r128_album_gain: Optional[int] = None,
+    loudness_metadata: Optional[dict] = None,
 ) -> bytes:
-    """Apply ReplayGain metadata to an audio file using FFmpeg and return as BytesIO.
+    """Apply ReplayGain and additional loudness metadata to an audio file using FFmpeg and return as BytesIO.
 
     This function processes an audio file provided as a BytesIO object, applies
-    ReplayGain and R128 gain metadata, and returns the modified audio data as a
+    ReplayGain and other loudness metadata, and returns the modified audio data as a
     BytesIO object. It uses FFmpeg for processing and ensures the integrity and
     correctness of the output.
 
@@ -79,6 +99,7 @@ def apply_replaygain(
         file_format (str): Format of the audio file ('mp3', 'flac', 'opus', etc.).
         r128_track_gain (Optional[int]): Optional R128 track gain.
         r128_album_gain (Optional[int]): Optional R128 album gain.
+        loudness_metadata (Optional[dict]): Additional loudness metadata to be embedded.
 
     Returns:
         BytesIO: The modified audio file data as a BytesIO object.
@@ -86,7 +107,7 @@ def apply_replaygain(
     Raises:
         Exception: If FFmpeg processing fails.
     """
-    logger.debug("Starting to apply ReplayGain and R128 gain metadata...")
+    logger.debug("Starting to apply ReplayGain and other loudness metadata...")
 
     # Construct metadata command parts
     metadata_cmd = [
@@ -99,6 +120,10 @@ def apply_replaygain(
 
     if r128_album_gain is not None:
         metadata_cmd.extend(['-metadata', f'R128_ALBUM_GAIN={r128_album_gain}'])
+
+    if loudness_metadata:
+        for key, value in loudness_metadata.items():
+            metadata_cmd.extend(['-metadata', f'{key}={value}'])
 
     # Extra options for MP3 to ensure compatibility
     extra_opts = []
@@ -116,8 +141,8 @@ def apply_replaygain(
         '-'  # Output to stdout
     ]
 
-    process = subprocess.Popen(
-        ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    process = Popen(
+        ffmpeg_cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE
     )
     output, error = process.communicate(input=file_like.getvalue())
 
@@ -135,28 +160,20 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
         file_format: The format of the audio file.
 
     Returns:
-        bytes: The binary content of the audio file with ReplayGain metadata.
+        bytes: The binary content of the audio file with ReplayGain and other loudness metadata.
     """
     file_like = BytesIO(file_content)
 
-    if file_format == 'opus':
-        gain, peak = calculate_replaygain(file_like, file_format)
-        r128_track_gain = int((gain - 1.0) * 256)
-        r128_album_gain = r128_track_gain
+    gain, peak, loudness_metadata = calculate_replaygain(file_like, file_format)
+    r128_track_gain = int((gain - 1.0) * 256) if 'R128_TRACK_GAIN' not in loudness_metadata else int(loudness_metadata['R128_TRACK_GAIN'])
+    r128_album_gain = 0  # Simple example; use more sophisticated logic if needed
 
-
-        try:
-            updated_content = apply_replaygain(file_like, gain, peak, file_format, r128_track_gain, r128_album_gain)
-        except Exception as e:
-            logger.error(f"Failed to apply ReplayGain metadata: {e}")
-            updated_content = file_content
-    else:
-        gain, peak = calculate_replaygain(file_like, file_format)
-        try:
-            updated_content = apply_replaygain(file_like, gain, peak, file_format)
-        except Exception as e:
-            logger.error(f"Failed to apply ReplayGain metadata: {e}")
-            updated_content = file_content
+    updated_content = apply_replaygain(
+        file_like, gain, peak, file_format,
+        r128_track_gain=r128_track_gain,
+        r128_album_gain=r128_album_gain,
+        loudness_metadata=loudness_metadata
+    )
 
     final_size = len(updated_content)
     logger.debug(f"Final post-replaygain file size: {final_size} bytes")
