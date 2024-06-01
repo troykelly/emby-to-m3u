@@ -31,15 +31,14 @@ def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, f
         '-f', 'null', '-'
     ]
 
-    process = Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    out, err = process.communicate(input=file_like.getvalue())
+    with Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE) as process:
+        out, err = process.communicate(input=file_like.getvalue())
 
     if process.returncode != 0:
         logger.error(f"ffmpeg command failed with error {process.returncode}: {err.decode('utf-8')}")
         raise CalledProcessError(process.returncode, command, output=out, stderr=err)
 
-    json_output = ""
-    json_lines = False
+    json_output, json_lines = '', False
     for line in err.decode('utf-8').splitlines():
         line = line.strip()
         if line == "{":
@@ -87,11 +86,6 @@ def apply_replaygain(
 ) -> bytes:
     """Apply ReplayGain and additional loudness metadata to an audio file using FFmpeg and return as BytesIO.
 
-    This function processes an audio file provided as a BytesIO object, applies
-    ReplayGain and other loudness metadata, and returns the modified audio data as a
-    BytesIO object. It uses FFmpeg for processing and ensures the integrity and
-    correctness of the output.
-
     Args:
         file_like (BytesIO): The audio file data.
         gain (float): ReplayGain track gain to set (in dB).
@@ -109,7 +103,6 @@ def apply_replaygain(
     """
     logger.debug("Starting to apply ReplayGain and other loudness metadata...")
 
-    # Construct metadata command parts
     metadata_cmd = [
         '-metadata', f'replaygain_track_gain={gain} dB',
         '-metadata', f'replaygain_track_peak={peak}'
@@ -125,26 +118,22 @@ def apply_replaygain(
         for key, value in loudness_metadata.items():
             metadata_cmd.extend(['-metadata', f'{key}={value}'])
 
-    # Extra options for MP3 to ensure compatibility
     extra_opts = []
     if file_format.lower() == 'mp3':
         extra_opts = ['-id3v2_version', '3', '-write_id3v1', '1']
 
-    # FFmpeg command setup
-    ffmpeg_cmd = [
+    command = [
         'ffmpeg', '-hide_banner', '-y',
-        '-i', '-',  # Input from stdin
-        '-c', 'copy',  # Copy the codec settings to avoid re-encoding
-        '-map_metadata', '0',  # Preserve all metadata not explicitly changed
+        '-i', '-',  
+        '-c', 'copy',  
+        '-map_metadata', '0',
     ] + extra_opts + metadata_cmd + [
-        '-f', file_format,  # Output format
-        '-'  # Output to stdout
+        '-f', file_format, 
+        '-'
     ]
 
-    process = Popen(
-        ffmpeg_cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE
-    )
-    output, error = process.communicate(input=file_like.getvalue())
+    with Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE) as process:
+        output, error = process.communicate(input=file_like.getvalue())
 
     if process.returncode != 0:
         logger.error(f"FFmpeg error: {error.decode()}")
@@ -166,7 +155,7 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
 
     gain, peak, loudness_metadata = calculate_replaygain(file_like, file_format)
     r128_track_gain = int((gain - 1.0) * 256) if 'R128_TRACK_GAIN' not in loudness_metadata else int(loudness_metadata['R128_TRACK_GAIN'])
-    r128_album_gain = 0  # Simple example; use more sophisticated logic if needed
+    r128_album_gain = 0
 
     updated_content = apply_replaygain(
         file_like, gain, peak, file_format,
@@ -192,6 +181,7 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     """
     content.seek(0)
     try:
+        from mutagen import File as MutagenFile
         audio_file = MutagenFile(content, easy=True)
     except Exception as e:
         logger.error(f"Error reading file with Mutagen: {e}")
@@ -202,7 +192,6 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
         return False
 
     def log_replaygain_metadata(tags, metadata_keys):
-        """Logs and checks for the presence of ReplayGain metadata."""
         has_metadata = False
         for key in metadata_keys:
             if key in tags:

@@ -49,7 +49,6 @@ class PlaylistReport:
         peak: Optional[str] = ''
     ) -> None:
         """Adds an event to the specified playlist.
-
         Args:
             playlist_name: The name of the playlist.
             event_type: The type of event.
@@ -70,7 +69,6 @@ class PlaylistReport:
 
     def generate_markdown(self) -> str:
         """Generates a Markdown report for the playlist events.
-
         Returns:
             A string containing the Markdown report.
         """
@@ -81,13 +79,8 @@ class PlaylistReport:
 
         for playlist_name, events in self.playlists.items():
             report_lines.append(f"\n### {playlist_name}\n")
-
-            report_lines.append(
-                "| Event | Notes | Artist Name | Track Name | Genre | Length (s) | Gain | Peak |"
-            )
-            report_lines.append(
-                "|-------|-------|-------------|------------|-------|------------|------|------|"
-            )
+            report_lines.append("| Event | Notes | Artist Name | Track Name | Genre | Length (s) | Gain | Peak |")
+            report_lines.append("|-------|-------|-------------|------------|-------|------------|------|------|")
 
             for event in events:
                 report_lines.append(
@@ -96,3 +89,11 @@ class PlaylistReport:
                 )
 
         return "\n".join(report_lines)
+
+    def __enter__(self) -> 'PlaylistReport':
+        """Enter the runtime context for this object."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        """Exit the runtime context, clean up resources."""
+        self.playlists.clear()

@@ -27,8 +27,11 @@ $ python3 main.py
 
 import os
 import logging
+import colorlog
 import requests
 import sys
+import signal
+import traceback
 from typing import List, Dict, Tuple, Any
 from datetime import datetime
 from collections import defaultdict
@@ -51,13 +54,48 @@ numeric_level = getattr(logging, log_level, None)
 if not isinstance(numeric_level, int):
     raise ValueError(f'Invalid log level: {log_level}')
 
-# Configure the basic logging settings with the specified log level
-logging.basicConfig(level=numeric_level, format='%(levelname)s:%(name)s:%(message)s')
+# Define the color configuration for log levels
+log_colors = {
+    'DEBUG': 'bold_blue',
+    'INFO': 'bold_green',
+    'WARNING': 'bold_yellow',
+    'ERROR': 'bold_red',
+    'CRITICAL': 'bold_purple'
+}
+
+# Define a formatter that includes colors
+formatter = colorlog.ColoredFormatter(
+    "%(log_color)s%(levelname)s:%(name)s:%(message)s",
+    log_colors=log_colors
+)
 
 # Get a logger
 logger = logging.getLogger(__name__)
 
+# Configure the basic logging settings with the specified log level and color formatter
+handler = logging.StreamHandler()
+handler.setLevel(numeric_level)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(numeric_level)
+
+# Remove default handlers to avoid duplicate logs if basicConfig sets up a default handler
+if logger.hasHandlers():
+    logger.handlers.clear()
+    logger.addHandler(handler)
+
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        # Allow the default exception handler for KeyboardInterrupt
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+def handle_signal(signum, frame):
+    logger.critical(f"Received signal {signum}. Exiting.")
+    sys.exit(1)
 
 def get_batch_size(default=1):
     batch_size_str = os.getenv('M3U_BATCH_SIZE', None)
@@ -338,19 +376,32 @@ def cron_schedule(cron_expression: str) -> None:
 
 
 if __name__ == "__main__":
-    if VERSION != "__VERSION__":
-        logging.info(f"M3U to AzureCast Version {VERSION}")
-        
-    cron_expression = os.getenv('M3U_CRON')
+    # Install exception handler for uncaught exceptions
+    sys.excepthook = handle_exception
 
-    if cron_expression:
-        try:
-            # Validate cron expression
-            croniter(cron_expression)
-            logging.info("Cron expression is valid.")
-            cron_schedule(cron_expression)
-        except (ValueError, TypeError):
-            logging.error(f"Invalid cron expression: {cron_expression}")
-            exit(1)
-    else:
-        generate_playlists()
+    # Register signal handlers
+    signals_to_catch = [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT]
+
+    for sig in signals_to_catch:
+        signal.signal(sig, handle_signal)
+
+    try:
+        if VERSION != "__VERSION__":
+            logger.info(f"M3U to AzureCast Version {VERSION}")
+
+        cron_expression = os.getenv('M3U_CRON')
+
+        if cron_expression:
+            try:
+                # Validate cron expression
+                croniter(cron_expression)
+                logger.info("Cron expression is valid.")
+                cron_schedule(cron_expression)
+            except (ValueError, TypeError):
+                logger.error(f"Invalid cron expression: {cron_expression}")
+                sys.exit(1)
+        else:
+            generate_playlists()
+    except Exception as e:
+        logger.error("Exception in main execution block:", exc_info=True)
+        sys.exit(1)

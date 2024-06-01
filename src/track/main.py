@@ -45,14 +45,17 @@ class Track(dict):
         response = requests.get(download_url, stream=True)
         response.raise_for_status()
 
-        self.content = BytesIO(response.content)
-        self._check_and_apply_replaygain()
-        self.content.seek(0)  # Ensure pointer reset after ReplayGain processing
+        with BytesIO(response.content) as f:
+            self.content = BytesIO(f.getvalue())
+            self._check_and_apply_replaygain()
+            self.content.seek(0)  # Ensure pointer reset after ReplayGain processing
 
-        if len(self.content.getbuffer()) <= 4:
-            raise ValueError(f"Downloaded track '{self['Name']}' is only 4 bytes or less")
+            if len(self.content.getbuffer()) <= 4:
+                raise ValueError(f"Downloaded track '{self['Name']}' is only 4 bytes or less")
 
-        return self.content.getvalue()
+            data = self.content.getvalue()
+            self.content.close()  # Clean up memory
+            return data
 
     def _check_and_apply_replaygain(self) -> None:
         file_format = self['Path'].split('.')[-1].lower()

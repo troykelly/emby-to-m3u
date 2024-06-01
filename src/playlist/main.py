@@ -302,3 +302,17 @@ class PlaylistManager:
             return parse(date_str).replace(tzinfo=None)
         except (ValueError, TypeError):
             return default
+        
+    def __enter__(self) -> 'PlaylistManager':
+        """Enter the runtime context for this object."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        """Exit the runtime context, clean up resources."""
+        self.tracks.clear()
+        self.track_map.clear()
+        self.genres.clear()
+        self.playlists.clear()
+        self.artist_counter.clear()
+        self.album_counter.clear()
+        self.tracks_to_sync.clear()

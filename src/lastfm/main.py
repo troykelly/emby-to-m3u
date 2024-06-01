@@ -112,6 +112,14 @@ class LastFMCache:
         except Exception as e:
             logger.error(f"Failed to set cache for {artist_name} - {track_name}: {e}")
 
+    def __enter__(self) -> 'LastFMCache':
+        """Enter the runtime context for this object."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        """Exit the runtime context, clean up resources."""
+        self.connection.close()
+
 class LastFM:
     """Client to interact with the LastFM API using pylast."""
 
@@ -184,3 +192,11 @@ class LastFM:
             network: The pylast LastFMNetwork instance to set.
         """
         self.cache.set_network(network)  # Set the network for the cache in a thread-safe manner
+
+    def __enter__(self) -> 'LastFM':
+        """Enter the runtime context for this object."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        """Exit the runtime context, clean up resources."""
+        self.cache.__exit__(exc_type, exc_value, traceback)
