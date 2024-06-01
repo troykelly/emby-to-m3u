@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from tqdm import tqdm
 from dateutil.parser import parse
 from util.main import normalize_filename, write_m3u_playlist
+from reporting import PlaylistReport
 
 if TYPE_CHECKING:
     from track.main import Track  # Avoids direct import at the module level
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class PlaylistManager:
     """Manages music tracks and playlist generation."""
 
-    def __init__(self) -> None:
+    def __init__(self, report: PlaylistReport) -> None:
         """Initializes PlaylistManager with empty tracks and playlists."""
         self.tracks: List['Track'] = []
         self.track_map: Dict[str, 'Track'] = {}
@@ -37,6 +38,7 @@ class PlaylistManager:
         self.ignored_genres: List[str] = [
             genre.strip().lower() for genre in os.getenv('TRACK_IGNORE_GENRE', '').split(',')
         ]
+        self.report = report
 
     def add_track(self, track: 'Track') -> None:
         """Adds a track to the PlaylistManager.

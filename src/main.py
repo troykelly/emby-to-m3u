@@ -28,6 +28,7 @@ $ python3 main.py
 import os
 import logging
 import requests
+import sys
 from typing import List, Dict, Tuple, Any
 from datetime import datetime
 from collections import defaultdict
@@ -39,6 +40,7 @@ from lastfm.main import LastFM
 from azuracast.main import AzuraCastSync
 from playlist.main import PlaylistManager
 from util.main import normalize_filename, safe_date_parse, write_m3u_playlist
+from reporting import PlaylistReport
 from dateutil.parser import parse
 from croniter import croniter
 from time import sleep
@@ -64,13 +66,15 @@ def generate_playlists() -> None:
     destination = os.getenv('M3U_DESTINATION')
     if not destination:
         raise ValueError("Environment variable M3U_DESTINATION is not set.")
+    
+    report = PlaylistReport()
 
     logger.debug("Generating playlists")
 
     genre_dir, artist_dir, album_dir, year_dir, decade_dir, radio_dir = ensure_directories_exist(destination)
 
     # Initialize the PlaylistManager and fetch tracks from Emby
-    playlist_manager = PlaylistManager()
+    playlist_manager = PlaylistManager(report)
     playlist_manager.fetch_tracks()  # Fetch and set tracks
 
     # Add tracks and genres to the PlaylistManager
@@ -99,7 +103,11 @@ def generate_playlists() -> None:
     generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, BATCH_SIZE)
 
     logger.debug("Playlists generated successfully")
-
+    
+    report_content = report.generate_markdown()  # Generate the report
+    
+    # Output the Report to STDERR
+    print(report_content, file=sys.stderr)
 
 def ensure_directories_exist(destination: str) -> Tuple[str, str, str, str, str, str]:
     """Ensure the required directories exist.
