@@ -298,7 +298,6 @@ class AzuraCastSync:
         Returns:
             True if file was successfully uploaded or already exists in Azuracast, False otherwise.
         """
-        
         artist_name: str = track.get("AlbumArtist", "Unknown Artist")
         title: str = track.get("Name", "Unknown Title")
 
@@ -317,6 +316,9 @@ class AzuraCastSync:
                         track["Name"],
                         track["azuracast_file_id"],
                     )
+                    # Clear the track content to free memory
+                    track.clear_content()
+
                 else:
                     logger.error("Failed to set azuracast_file_id for '%s'", track["Name"])
                     return False
@@ -351,6 +353,8 @@ class AzuraCastSync:
                                 track["Name"],
                                 track["azuracast_file_id"],
                             )
+                            # Clear the track content to free memory
+                            track.clear_content()
                         else:
                             logger.error(
                                 "Failed to upload file '%s' after deletion",

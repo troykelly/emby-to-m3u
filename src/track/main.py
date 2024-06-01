@@ -28,6 +28,10 @@ class Track(dict):
         self.replaygain_peak: Optional[float] = None
         self.content: Optional[BytesIO] = None
 
+    def clear_content(self) -> None:
+        """Clears the track content to free memory."""
+        self.content = None
+
     def download(self) -> bytes:
         """Downloads the track's binary content from the Emby server.
 
