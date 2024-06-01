@@ -59,7 +59,17 @@ logger = logging.getLogger(__name__)
 
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
-BATCH_SIZE = os.getenv('M3U_BATCH_SIZE', 1)
+def get_batch_size(default=1):
+    batch_size_str = os.getenv('M3U_BATCH_SIZE', None)
+    if batch_size_str is None:
+        logger.warning(f"M3U_BATCH_SIZE not set, using default of {default}.")
+        return default
+
+    try:
+        return int(batch_size_str)
+    except ValueError:
+        logger.warning(f"Invalid M3U_BATCH_SIZE '{batch_size_str}', using default of {default}.")
+        return default
 
 def generate_playlists() -> None:
     """Main function to generate m3u playlists for genres, artists, albums, and years."""
@@ -100,7 +110,7 @@ def generate_playlists() -> None:
 
     # Generate radio playlists in batches
     radio_playlist_items = list(radio_generator.playlists.items())
-    generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, BATCH_SIZE)
+    generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, get_batch_size())
 
     logger.debug("Playlists generated successfully")
     
