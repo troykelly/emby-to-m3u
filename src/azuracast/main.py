@@ -101,7 +101,7 @@ class AzuraCastSync:
                     params=params,
                     data=data,
                     json=json,
-                    timeout=(5, 60),
+                    timeout=(10, 300),
                 )
                 if response.status_code == 404:
                     logger.warning("Attempt %d: Request to %s resulted in 404 Not Found", attempt, url)
