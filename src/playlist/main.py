@@ -36,7 +36,7 @@ class PlaylistManager:
         self.album_counter: Counter = Counter()
         self.tracks_to_sync: List['Track'] = []
         self.ignored_genres: List[str] = [
-            genre.strip().lower() for genre in os.getenv('TRACK_IGNORE_GENRE', '').split(',')
+            self._normalize_genre(genre.strip()) for genre in os.getenv('TRACK_IGNORE_GENRE', '').split(',')
         ]
         self.report = report
 
@@ -59,7 +59,8 @@ class PlaylistManager:
             genre: Genre name.
             track_id: Track ID.
         """
-        self.genres[genre].append(track_id)
+        normalized_genre = self._normalize_genre(genre)
+        self.genres[normalized_genre].append(track_id)
         
     def get_track_count_for_genre(self, genre: str) -> int:
         """Retrieves the number of tracks for a given genre.
@@ -70,7 +71,8 @@ class PlaylistManager:
         Returns:
             The number of tracks for the given genre.
         """
-        return len(self.genres[genre])
+        normalized_genre = self._normalize_genre(genre)
+        return len(self.genres[normalized_genre])
 
     def get_tracks_by_genre(self, genre: str) -> List['Track']:
         """Retrieves a list of tracks for a given genre.
@@ -81,7 +83,13 @@ class PlaylistManager:
         Returns:
             List of track dictionaries.
         """
-        return [self.track_map[track_id] for track_id in self.genres[genre]]
+        normalized_genre = self._normalize_genre(genre)
+        return [self.track_map[track_id] for track_id in self.genres[normalized_genre]]
+
+    @staticmethod
+    def _normalize_genre(genre: str) -> str:
+        """Normalize genre name to ensure consistent format."""
+        return genre.strip().lower()
 
     def get_track_by_id(self, track_id: str) -> Optional['Track']:
         """Retrieves a track by its ID.

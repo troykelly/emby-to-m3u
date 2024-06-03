@@ -155,11 +155,15 @@ def generate_playlists() -> None:
     logger.debug("Playlists generated successfully")
     
     report_content = report.generate_markdown()  # Generate the report
+    report_pdf = report.generate_pdf()  # Generate the PDF report
         
     # Write report to the M3U directory
     report_filename = os.path.join(destination, 'report.md')
+    report_pdf_filename = os.path.join(destination, 'report.pdf')
     with open(report_filename, 'w') as f:
         f.write(report_content)
+    with open(report_pdf_filename, 'wb') as f:
+        f.write(report_pdf)
 
 def ensure_directories_exist(destination: str) -> Tuple[str, str, str, str, str, str]:
     """Ensure the required directories exist.
@@ -209,15 +213,26 @@ def generate_and_upload_radio_playlist(
     # Ensure thread-local network context is set
     lastfm.cache.set_network(lastfm.network)
     
-    # Create a list of available genre's, ensuring they have tracks before generating the playlist
-    available_genres = [genre for genre in genres if radio_generator.playlist_manager.get_track_count_for_genre(genre) > 0]
-    
+    total_available_tracks = 0
+    available_genres = []
+    for genre in genres:
+        normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
+        track_count = radio_generator.playlist_manager.get_track_count_for_genre(normalized_genre)
+        total_available_tracks += track_count
+        if track_count > 0:
+            available_genres.append(normalized_genre)
+            logger.debug(f"Genre: {normalized_genre} has {track_count} tracks available for playlist generation.")
+        else:
+            logger.warning(f"No tracks available for genre: {normalized_genre}. Not using for playlist generation.")
+            
     # Ensure there is at least 1 available genre, return if not
     if len(available_genres) == 0:
         logger.warning(f"No tracks available for genres: {genres}. Skipping generation.")
         return
+    
+    logger.debug(f"Generating playlist for genres: {available_genres} ({total_available_tracks} tracks) in time segment: {time_segment}")
 
-    playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
+    playlist = radio_generator.generate_playlist(available_genres, min_radio_duration, time_segment)
     if not playlist:
         logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
         return

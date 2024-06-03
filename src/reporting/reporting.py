@@ -1,7 +1,11 @@
 # src/reporting/reporting.py
 
 import datetime
+import io
 from typing import Dict, List, Optional
+
+import markdown
+import pdfkit
 
 
 class Event:
@@ -144,6 +148,82 @@ class PlaylistReport:
                 )
             
         return "\n".join(report_lines)
+
+    def generate_pdf(self, page_size: str = 'A4', orientation: str = 'landscape') -> bytes:
+        """Generates a PDF of the Markdown report.
+        
+        Args:
+            page_size: The page size of the PDF (default is 'A4').
+            orientation: The orientation of the PDF (default is 'landscape').
+        
+        Returns:
+            A bytes object containing the PDF data.
+        """
+        markdown_report = self.generate_markdown()
+        html_report = self._convert_markdown_to_html(markdown_report)
+        
+        pdf_options = {
+            'page-size': page_size,
+            'orientation': orientation,
+        }
+        
+        pdf_bytes = pdfkit.from_string(html_report, False, options=pdf_options)
+        
+        return pdf_bytes
+
+    def _convert_markdown_to_html(self, markdown_content: str) -> str:
+        """Converts Markdown content to a formatted HTML.
+        
+        Args:
+            markdown_content: The raw Markdown content.
+        
+        Returns:
+            A formatted HTML string with embedded styles.
+        """
+        styles = """
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+            }
+            h1, h2, h3 {
+                color: #333;
+                margin-bottom: 16px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            th, td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #f2f2f2;
+            }
+            tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+        </style>
+        """
+
+        html_template = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Playlist Report</title>
+            {styles}
+        </head>
+        <body>
+            {markdown.markdown(markdown_content, extensions=['tables'])}
+        </body>
+        </html>
+        """
+        
+        return html_template
 
     def __enter__(self) -> 'PlaylistReport':
         """Enter the runtime context for this object."""
