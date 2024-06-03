@@ -8,6 +8,9 @@ from mutagen import File as MutagenFile
 from subprocess import Popen, PIPE, CalledProcessError
 from math import isnan
 
+from logger import setup_logging
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, float, dict]:

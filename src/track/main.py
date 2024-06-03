@@ -6,6 +6,9 @@ from io import BytesIO
 
 from replaygain.main import process_replaygain, has_replaygain_metadata
 
+from logger import setup_logging
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:

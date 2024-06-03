@@ -3,14 +3,14 @@ import logging
 import os
 import random
 from typing import Dict, List, Optional, Set, TYPE_CHECKING
-
-from tqdm import tqdm
+from logger import setup_logging
 
 if TYPE_CHECKING:
     from playlist.main import PlaylistManager
     from lastfm.main import LastFM
     from azuracast.main import AzuraCastSync
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 class RadioPlaylistGenerator:
@@ -109,6 +109,9 @@ class RadioPlaylistGenerator:
             logger.warning(f"Unexpected format for similar tracks for {artist} - {title}")
             logger.warning(similar_tracks)
             return []
+        
+        # Remove tracks by the same artist from similar tracks
+        similar_tracks = [t for t in similar_tracks if t.get('artist', '').lower() != artist.lower()]
         
         return similar_tracks
 

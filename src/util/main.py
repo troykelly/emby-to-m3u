@@ -127,6 +127,12 @@ def write_m3u_playlist(
                 mb_release_group_id = external_ids['MusicBrainzReleaseGroupId']
                 the_audio_db_album_id = external_ids['TheAudioDbAlbumId']
                 the_audio_db_artist_id = external_ids['TheAudioDbArtistId']
+                
+                # Get the file path from the track object
+                # If AZURACAST_HOST, AZURACAST_API_KEY, AZURACAST_STATIONID are set, use azuracast_sync to generate the file path
+                file_path = track.get('Path', '')
+                if os.getenv('AZURACAST_HOST') and os.getenv('AZURACAST_API_KEY') and os.getenv('AZURACAST_STATIONID'):
+                    file_path = azuracast_sync.generate_file_path(track)
 
                 # Write extended information
                 f.write(f'#EXTINF:{duration}, {title}\n')
@@ -149,7 +155,7 @@ def write_m3u_playlist(
                 if the_audio_db_artist_id:
                     f.write(f'#EXT-X-THEAUDIODB-ARTISTID:{the_audio_db_artist_id}\n')
 
-                f.write(f'{strip_path_prefix(azuracast_file_path)}\n')
+                f.write(f'{strip_path_prefix(file_path)}\n')
 
         shutil.move(temp_file.name, filename)
     except Exception as e:

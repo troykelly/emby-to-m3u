@@ -10,11 +10,13 @@ from tqdm import tqdm
 from dateutil.parser import parse
 from util.main import normalize_filename, write_m3u_playlist
 from reporting import PlaylistReport
+from logger import setup_logging
 
 if TYPE_CHECKING:
     from track.main import Track  # Avoids direct import at the module level
 from azuracast.main import AzuraCastSync
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 class PlaylistManager:

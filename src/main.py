@@ -48,41 +48,10 @@ from dateutil.parser import parse
 from croniter import croniter
 from time import sleep
 
-# Get the logging level from the environment, default to 'INFO' if not set or invalid
-log_level = os.getenv('M3U_LOGGING_LEVEL', 'INFO').upper()
-numeric_level = getattr(logging, log_level, None)
-if not isinstance(numeric_level, int):
-    raise ValueError(f'Invalid log level: {log_level}')
+from logger import setup_logging
 
-# Define the color configuration for log levels
-log_colors = {
-    'DEBUG': 'bold_blue',
-    'INFO': 'bold_green',
-    'WARNING': 'bold_yellow',
-    'ERROR': 'bold_red',
-    'CRITICAL': 'bold_purple'
-}
-
-# Define a formatter that includes colors
-formatter = colorlog.ColoredFormatter(
-    "%(log_color)s%(levelname)s:%(name)s:%(message)s",
-    log_colors=log_colors
-)
-
-# Get a logger
+setup_logging()
 logger = logging.getLogger(__name__)
-
-# Configure the basic logging settings with the specified log level and color formatter
-handler = logging.StreamHandler()
-handler.setLevel(numeric_level)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(numeric_level)
-
-# Remove default handlers to avoid duplicate logs if basicConfig sets up a default handler
-if logger.hasHandlers():
-    logger.handlers.clear()
-    logger.addHandler(handler)
 
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
