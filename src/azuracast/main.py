@@ -14,7 +14,9 @@ from tqdm import tqdm
 from track.main import Track
 
 from replaygain.main import has_replaygain_metadata
+from logger import setup_logging
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 BASE_BACKOFF = 2

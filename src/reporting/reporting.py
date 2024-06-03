@@ -1,11 +1,15 @@
 # src/reporting/reporting.py
 
 import datetime
-import io
+import logging
 from typing import Dict, List, Optional
 
 import markdown
 import pdfkit
+from logger import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class Event:
@@ -68,6 +72,7 @@ class PlaylistReport:
         event = Event(
             event_type, notes, artist_name, track_name, genre, length_seconds, gain, peak
         )
+        logger.debug(f"Adding event to playlist '{playlist_name}': {event.__dict__}")
         if playlist_name not in self.playlists:
             self.playlists[playlist_name] = []
         self.playlists[playlist_name].append(event)

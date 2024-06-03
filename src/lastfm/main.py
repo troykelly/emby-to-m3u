@@ -6,7 +6,9 @@ import hashlib
 import sqlite3
 import threading
 from typing import List, Dict, Optional, Tuple, Any
+from logger import setup_logging
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Set the logging level for pylast and httpx to WARN
