@@ -217,7 +217,6 @@ class RadioPlaylistGenerator:
                 track: Track to add.
                 playlist: Playlist to add track to.
             """
-            logger.info(f"Adding {playlist_name} track: {track}")
             playlist.append(track)
             seen_tracks.add(track['Id'])
             update_playlist_duration(track['RunTimeTicks'] // 10000000)  # Convert ticks to seconds
