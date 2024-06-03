@@ -136,8 +136,9 @@ def generate_playlists() -> None:
     # Process tracks to categorize by genre, artist, and album
     playlist_manager.categorize_tracks()
 
-    # Write out playlists to the filesystem
-    playlist_manager.write_playlists(genre_dir, artist_dir, album_dir, year_dir, decade_dir)
+    # Unless env `M3U_DONT_WRITE_M3U` is set, write out playlists to the filesystem
+    if not os.getenv('M3U_DONT_WRITE_M3U'):
+        playlist_manager.write_playlists(genre_dir, artist_dir, album_dir, year_dir, decade_dir)
     playlist_manager.generate_genre_markdown(f"{destination}/genres.md")
 
     min_radio_duration = 14400  # Example duration for radio playlist in seconds (e.g., 86400 for 24 hours)
@@ -148,14 +149,21 @@ def generate_playlists() -> None:
 
     # Generate radio playlists in batches
     radio_playlist_items = list(radio_generator.playlists.items())
+    
     generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, get_batch_size())
 
     logger.debug("Playlists generated successfully")
     
     report_content = report.generate_markdown()  # Generate the report
-    
-    # Output the Report to STDERR
-    print(report_content, file=sys.stderr)
+    report_pdf = report.generate_pdf()  # Generate the PDF report
+        
+    # Write report to the M3U directory
+    report_filename = os.path.join(destination, 'report.md')
+    report_pdf_filename = os.path.join(destination, 'report.pdf')
+    with open(report_filename, 'w') as f:
+        f.write(report_content)
+    with open(report_pdf_filename, 'wb') as f:
+        f.write(report_pdf)
 
 def ensure_directories_exist(destination: str) -> Tuple[str, str, str, str, str, str]:
     """Ensure the required directories exist.
@@ -204,8 +212,27 @@ def generate_and_upload_radio_playlist(
     """
     # Ensure thread-local network context is set
     lastfm.cache.set_network(lastfm.network)
+    
+    total_available_tracks = 0
+    available_genres = []
+    for genre in genres:
+        normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
+        track_count = radio_generator.playlist_manager.get_track_count_for_genre(normalized_genre)
+        total_available_tracks += track_count
+        if track_count > 0:
+            available_genres.append(normalized_genre)
+            logger.debug(f"Genre: {normalized_genre} has {track_count} tracks available for playlist generation.")
+        else:
+            logger.warning(f"No tracks available for genre: {normalized_genre}. Not using for playlist generation.")
+            
+    # Ensure there is at least 1 available genre, return if not
+    if len(available_genres) == 0:
+        logger.warning(f"No tracks available for genres: {genres}. Skipping generation.")
+        return
+    
+    logger.debug(f"Generating playlist for genres: {available_genres} ({total_available_tracks} tracks) in time segment: {time_segment}")
 
-    playlist = radio_generator.generate_playlist(genres, min_radio_duration, time_segment)
+    playlist = radio_generator.generate_playlist(available_genres, min_radio_duration, time_segment)
     if not playlist:
         logger.error(f"Generated {time_segment} radio playlist is empty. Nothing to upload.")
         return
@@ -214,10 +241,9 @@ def generate_and_upload_radio_playlist(
     radio_playlist_filename = os.path.join(radio_dir, f'{normalize_filename(playlist_name)}.m3u')
     write_m3u_playlist(radio_playlist_filename, playlist)
 
-    if azuracast_sync.upload_playlist(playlist):
-        azuracast_sync.sync_playlist(playlist_name, playlist)
-    logger.debug(f"Successfully generated and uploaded playlist for {time_segment}")
-
+    if not os.getenv('M3U_DONT_SYNC_AZURACAST'):
+        if azuracast_sync.upload_playlist(playlist):
+            azuracast_sync.sync_playlist(playlist_name, playlist)
 
 def generate_playlists_in_batches(
     radio_generator: RadioPlaylistGenerator,

@@ -244,6 +244,30 @@ class RadioPlaylistGenerator:
         ignored_genres: Set[str] = set()
         retry_limit = 20
         retry_count = 0
+        
+        # Add event to report
+        self.playlist_manager.report.add_event(
+            playlist_name,
+            'START_GENERATION',
+            f"Starting playlist generation with: {genres}",
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+        )
+        self.playlist_manager.report.add_event(
+            playlist_name,
+            'TARGET_LENGTH',
+            f"Target lenght is {min_duration} seconds",
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+        )
 
         while playlist_duration < min_duration:
             if retry_count >= retry_limit:
@@ -272,15 +296,49 @@ class RadioPlaylistGenerator:
             )
 
             initial_track = self._get_random_track_by_genre(genre)
-            if not initial_track or track_already_added(initial_track['Id']) or is_track_rejected(initial_track):
+            if not initial_track:
                 ignored_genres.add(genre)
                 # Add event to report
                 self.playlist_manager.report.add_event(
                     playlist_name,
-                    'GENRE_IGNORED',
+                    'NO_INITIAL_TRACK',
                     '',
                     '',
                     '',
+                    genre,
+                    '',
+                    '',
+                    '',
+                )                
+                retry_count += 1
+                continue
+            
+            if track_already_added(initial_track['Id']):
+                ignored_genres.add(genre)
+                # Add event to report
+                self.playlist_manager.report.add_event(
+                    playlist_name,
+                    'TRACK_ALREADY_ADDED',
+                    '',
+                    initial_track.get('AlbumArtist', ''),
+                    initial_track.get('Name', ''),
+                    genre,
+                    '',
+                    '',
+                    '',
+                )                
+                retry_count += 1
+                continue
+            
+            if is_track_rejected(initial_track):
+                ignored_genres.add(genre)
+                # Add event to report
+                self.playlist_manager.report.add_event(
+                    playlist_name,
+                    'TRACK_REJECTED',
+                    '',
+                    initial_track.get('AlbumArtist', ''),
+                    initial_track.get('Name', ''),
                     genre,
                     '',
                     '',

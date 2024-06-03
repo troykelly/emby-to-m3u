@@ -8,7 +8,7 @@ WORKDIR /app
 # Install dependencies and create a virtual environment
 COPY requirements.txt .
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg wkhtmltopdf && \
     pip install --no-cache-dir -r requirements.txt && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

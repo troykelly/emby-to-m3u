@@ -1,7 +1,11 @@
 # src/reporting/reporting.py
 
 import datetime
+import io
 from typing import Dict, List, Optional
+
+import markdown
+import pdfkit
 
 
 class Event:
@@ -49,6 +53,7 @@ class PlaylistReport:
         peak: Optional[str] = ''
     ) -> None:
         """Adds an event to the specified playlist.
+        
         Args:
             playlist_name: The name of the playlist.
             event_type: The type of event.
@@ -67,28 +72,158 @@ class PlaylistReport:
             self.playlists[playlist_name] = []
         self.playlists[playlist_name].append(event)
 
+    def _calculate_column_widths(self, events: List[Event]) -> Dict[str, int]:
+        """Calculates the maximum width for each column based on the events.
+        
+        Args:
+            events: A list of events.
+        
+        Returns:
+            A dictionary with column names as keys and their respective max widths as values.
+        """
+        columns = [
+            "event_type", "notes", "artist_name", "track_name",
+            "genre", "length_seconds", "gain", "peak"
+        ]
+        
+        max_widths = {column: len(column.replace('_', ' ').title()) for column in columns}
+        
+        for event in events:
+            max_widths['event_type'] = max(max_widths['event_type'], len(event.event_type))
+            max_widths['notes'] = max(max_widths['notes'], len(event.notes))
+            max_widths['artist_name'] = max(max_widths['artist_name'], len(event.artist_name))
+            max_widths['track_name'] = max(max_widths['track_name'], len(event.track_name))
+            max_widths['genre'] = max(max_widths['genre'], len(event.genre))
+            max_widths['length_seconds'] = max(max_widths['length_seconds'], len(str(event.length_seconds)))
+            max_widths['gain'] = max(max_widths['gain'], len(event.gain))
+            max_widths['peak'] = max(max_widths['peak'], len(event.peak))
+            
+        return max_widths
+
     def generate_markdown(self) -> str:
         """Generates a Markdown report for the playlist events.
+        
         Returns:
             A string containing the Markdown report.
         """
         report_lines = [
             f"# Generation Report for M3U to AzuraCast",
-            f"## {datetime.datetime.now().strftime('%H:%M %a %-d %B %Y')}",
+            f"## {datetime.datetime.now().strftime('%H:%M %a %-d %B %Y')}"
         ]
-
+        
         for playlist_name, events in self.playlists.items():
             report_lines.append(f"\n### {playlist_name}\n")
-            report_lines.append("| Event | Notes | Artist Name | Track Name | Genre | Length (s) | Gain | Peak |")
-            report_lines.append("|-------|-------|-------------|------------|-------|------------|------|------|")
-
+            
+            # Calculate max widths for formatting
+            max_widths = self._calculate_column_widths(events)
+            
+            # Header
+            header = "| " + " | ".join([
+                f"{column.replace('_', ' ').title():<{max_widths[column]}}"
+                for column in [
+                    'event_type', 'notes', 'artist_name', 'track_name', 
+                    'genre', 'length_seconds', 'gain', 'peak'
+                ]
+            ]) + " |"
+            align_row = "|-" + "-|-".join([
+                '-' * max_widths[column] for column in [
+                    'event_type', 'notes', 'artist_name', 'track_name', 
+                    'genre', 'length_seconds', 'gain', 'peak'
+                ]
+            ]) + "-|"
+            report_lines.append(header)
+            report_lines.append(align_row)
+            
+            # Rows
             for event in events:
                 report_lines.append(
-                    f"| {event.event_type} | {event.notes} | {event.artist_name} | {event.track_name} | "
-                    f"{event.genre} | {event.length_seconds} | {event.gain} | {event.peak} |"
+                    f"| {event.event_type:<{max_widths['event_type']}}"
+                    f" | {event.notes:<{max_widths['notes']}}"
+                    f" | {event.artist_name:<{max_widths['artist_name']}}"
+                    f" | {event.track_name:<{max_widths['track_name']}}"
+                    f" | {event.genre:<{max_widths['genre']}}"
+                    f" | {event.length_seconds:<{max_widths['length_seconds']}}"
+                    f" | {event.gain:<{max_widths['gain']}}"
+                    f" | {event.peak:<{max_widths['peak']}} |"
                 )
-
+            
         return "\n".join(report_lines)
+
+    def generate_pdf(self, page_size: str = 'A4', orientation: str = 'landscape') -> bytes:
+        """Generates a PDF of the Markdown report.
+        
+        Args:
+            page_size: The page size of the PDF (default is 'A4').
+            orientation: The orientation of the PDF (default is 'landscape').
+        
+        Returns:
+            A bytes object containing the PDF data.
+        """
+        markdown_report = self.generate_markdown()
+        html_report = self._convert_markdown_to_html(markdown_report)
+        
+        pdf_options = {
+            'page-size': page_size,
+            'orientation': orientation,
+        }
+        
+        pdf_bytes = pdfkit.from_string(html_report, False, options=pdf_options)
+        
+        return pdf_bytes
+
+    def _convert_markdown_to_html(self, markdown_content: str) -> str:
+        """Converts Markdown content to a formatted HTML.
+        
+        Args:
+            markdown_content: The raw Markdown content.
+        
+        Returns:
+            A formatted HTML string with embedded styles.
+        """
+        styles = """
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+            }
+            h1, h2, h3 {
+                color: #333;
+                margin-bottom: 16px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            th, td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #f2f2f2;
+            }
+            tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+        </style>
+        """
+
+        html_template = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Playlist Report</title>
+            {styles}
+        </head>
+        <body>
+            {markdown.markdown(markdown_content, extensions=['tables'])}
+        </body>
+        </html>
+        """
+        
+        return html_template
 
     def __enter__(self) -> 'PlaylistReport':
         """Enter the runtime context for this object."""
