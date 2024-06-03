@@ -408,9 +408,6 @@ class RadioPlaylistGenerator:
                 '',
             )                        
             for candidate in candidate_tracks:
-                if random.random() < 0.3:
-                    break
-
                 similar_track = self.playlist_manager.get_track_by_title_and_artist(
                     candidate['title'], candidate['artist']
                 )
@@ -427,6 +424,9 @@ class RadioPlaylistGenerator:
                         '',
                     )                    
                     add_track_to_playlist(similar_track, playlist)
+                    
+                if random.random() < 0.3:
+                    break
 
         return playlist
 
