@@ -60,6 +60,17 @@ class PlaylistManager:
             track_id: Track ID.
         """
         self.genres[genre].append(track_id)
+        
+    def get_track_count_for_genre(self, genre: str) -> int:
+        """Retrieves the number of tracks for a given genre.
+
+        Args:
+            genre: Genre name.
+
+        Returns:
+            The number of tracks for the given genre.
+        """
+        return len(self.genres[genre])
 
     def get_tracks_by_genre(self, genre: str) -> List['Track']:
         """Retrieves a list of tracks for a given genre.
