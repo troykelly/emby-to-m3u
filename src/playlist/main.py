@@ -62,6 +62,9 @@ class PlaylistManager:
             track_id: Track ID.
         """
         normalized_genre = self._normalize_genre(genre)
+        if normalized_genre is None:
+            logger.warning(f"Track ID {track_id} has an invalid genre: {genre}")
+            return
         self.genres[normalized_genre].append(track_id)
         
     def get_track_count_for_genre(self, genre: str) -> int:
@@ -89,8 +92,10 @@ class PlaylistManager:
         return [self.track_map[track_id] for track_id in self.genres[normalized_genre]]
 
     @staticmethod
-    def _normalize_genre(genre: str) -> str:
+    def _normalize_genre(genre: Optional[str]) -> Optional[str]:
         """Normalize genre name to ensure consistent format."""
+        if genre is None:
+            return None
         return genre.strip().lower()
 
     def get_track_by_id(self, track_id: str) -> Optional['Track']:
