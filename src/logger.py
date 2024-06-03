@@ -1,9 +1,11 @@
 import logging
 import os
 import requests
+import traceback
 from logging.handlers import RotatingFileHandler
 from typing import List, Dict
 import colorlog
+
 
 class PostmarkHandler(logging.Handler):
     """Custom logging handler to send error logs via PostmarkApp."""
@@ -35,10 +37,11 @@ class PostmarkHandler(logging.Handler):
             # Format the log message and include the exception traceback if it exists
             log_entry = self.format(record)
             if record.exc_info:
-                exception_info = self.formatException(record.exc_info)
-                log_entry = f"{log_entry}\n\n{exception_info}"
-        except Exception:
+                exception_info = traceback.format_exception(*record.exc_info)
+                log_entry = f"{log_entry}\n\n{''.join(exception_info)}"
+        except Exception as e:
             log_entry = record.getMessage()
+            print(f"Failed to format log entry: {e}")
 
         payload = {
             'From': self.sender_email,
@@ -56,8 +59,9 @@ class PostmarkHandler(logging.Handler):
         except requests.RequestException as e:
             print(f"Failed to send email alert: {e}")
 
+
 def setup_logging() -> None:
-    """Configure the centralised logging settings."""
+    """Configure the centralized logging settings."""
     log_level = os.getenv('M3U_LOG_LEVEL', 'INFO').upper()
     log_file = os.getenv('M3U_LOG_FILE')
     max_bytes = int(os.getenv('LOG_FILE_MAX_BYTES', '10485760'))  # 10 MB
@@ -109,5 +113,6 @@ def setup_logging() -> None:
             postmark_handler.setFormatter(file_formatter)  # Ensure the same formatter is used
             postmark_handler.setLevel(logging.ERROR)
             logger.addHandler(postmark_handler)
+
 
 setup_logging()
