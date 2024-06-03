@@ -275,10 +275,43 @@ class RadioPlaylistGenerator:
 
             genre = select_random_genre(genres, ignored_genres)
             if not genre:
+                self.playlist_manager.report.add_event(
+                    playlist_name,
+                    'GENRES_EXHAUSTED',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                )
                 genres = refresh_genres(genres)
                 if not genres:
                     logger.warning(f"Cannot generate full playlist '{playlist_name}': insufficient tracks.")
+                    self.playlist_manager.report.add_event(
+                        playlist_name,
+                        'INSUFFICIENT_TRACKS',
+                        '',
+                        '',
+                        '',
+                        '',
+                        '',
+                        '',
+                        '',
+                    )                    
                     break
+                self.playlist_manager.report.add_event(
+                    playlist_name,
+                    'GENRE_YEAR_FILTER_REMOVED',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                )                
                 ignored_genres.clear()
                 continue
             
@@ -394,20 +427,6 @@ class RadioPlaylistGenerator:
                         '',
                     )                    
                     add_track_to_playlist(similar_track, playlist)
-
-            if not candidate_tracks:
-                self.playlist_manager.report.add_event(
-                    playlist_name,
-                    'GENRES_EXHAUSTED',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                )                
-                genres = refresh_genres(genres)
 
         return playlist
 
