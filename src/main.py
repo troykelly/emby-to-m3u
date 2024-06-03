@@ -186,6 +186,9 @@ def generate_and_upload_radio_playlist(
     available_genres = []
     for genre in genres:
         normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
+        if normalized_genre is None:
+            logger.warning(f"Skipping invalid genre: {genre}")
+            continue        
         track_count = radio_generator.playlist_manager.get_track_count_for_genre(normalized_genre)
         total_available_tracks += track_count
         if track_count > 0:

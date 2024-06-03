@@ -86,12 +86,20 @@ class PostmarkHandler(logging.Handler):
         Args:
             record: LogRecord to be sent as an email alert.
         """
-        log_entry = self.format(record)
+        # Use format with exception information if present
+        try:
+            msg = self.format(record)
+            if record.exc_info:
+                exc_info = self.formatException(record.exc_info)
+                msg = f"{msg}\n\n{exc_info}"
+        except Exception:
+            msg = record.getMessage()
+
         payload = {
             'From': self.sender_email,
             'To': ','.join(self.receiver_emails),
             'Subject': self.subject,
-            'TextBody': log_entry
+            'TextBody': msg
         }
         headers = {
             'X-Postmark-Server-Token': self.api_token,
