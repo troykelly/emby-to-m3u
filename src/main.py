@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
-TIMEZONE = os.getenv('TIMEZONE', 'Etc/UTC')
+TIMEZONE = os.getenv('TZ', 'Etc/UTC')
 
 DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
