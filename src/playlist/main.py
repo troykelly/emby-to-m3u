@@ -94,7 +94,7 @@ class PlaylistManager:
     @staticmethod
     def _normalize_genre(genre: Optional[str]) -> Optional[str]:
         """Normalize genre name to ensure consistent format."""
-        if genre is None:
+        if not genre:
             return None
         return genre.strip().lower()
 
@@ -120,9 +120,13 @@ class PlaylistManager:
             The track metadata dictionary if found, None otherwise.
         """
         for track in self.track_map.values():
-            if track.get('Name').lower() == title.lower() and track.get('AlbumArtist').lower() == artist.lower():
-                return track
-        return None    
+            track_name = track.get('Name')
+            album_artist = track.get('AlbumArtist')
+            
+            if isinstance(track_name, str) and isinstance(album_artist, str):
+                if track_name.lower() == title.lower() and album_artist.lower() == artist.lower():
+                    return track
+        return None
 
 
     def fetch_tracks(self) -> None:
