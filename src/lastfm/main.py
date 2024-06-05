@@ -12,19 +12,21 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # Set the logging level for pylast and httpx to WARN
-logging.getLogger('pylast').setLevel(logging.WARN)
-logging.getLogger('httpx').setLevel(logging.WARN)
+logging.getLogger("pylast").setLevel(logging.WARN)
+logging.getLogger("httpx").setLevel(logging.WARN)
 
 # Environment variables for LastFM API
-API_KEY = os.getenv('LAST_FM_API_KEY')
-API_SECRET = os.getenv('LAST_FM_API_SECRET')
-USERNAME = os.getenv('LAST_FM_USERNAME', '')
-PASSWORD_HASH = pylast.md5(os.getenv('LAST_FM_PASSWORD', ''))
+API_KEY = os.getenv("LAST_FM_API_KEY")
+API_SECRET = os.getenv("LAST_FM_API_SECRET")
+USERNAME = os.getenv("LAST_FM_USERNAME", "")
+PASSWORD_HASH = pylast.md5(os.getenv("LAST_FM_PASSWORD", ""))
+CACHE_DB_FILE = os.getenv("LAST_FM_CACHE_FILE", "lastfm_cache.db")
+
 
 class LastFMCache:
     """Simple cache to store LastFM responses to minimize API traffic."""
 
-    def __init__(self, cache_file: str = 'lastfm_cache.db') -> None:
+    def __init__(self, cache_file: str = "lastfm_cache.db") -> None:
         """Initializes the LastFMCache with an SQLite database.
 
         Args:
@@ -38,12 +40,14 @@ class LastFMCache:
     def _init_db(self) -> None:
         """Initializes the database and creates tables if they don't exist."""
         with self.connection as conn:
-            conn.execute('''
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS cache (
                     key TEXT PRIMARY KEY,
                     data TEXT
                 )
-            ''')
+            """
+            )
             conn.commit()
 
     def _get_network(self) -> Optional[pylast.LastFMNetwork]:
@@ -52,7 +56,7 @@ class LastFMCache:
         Returns:
             The LastFM network object if set, otherwise None.
         """
-        return getattr(self.local, 'network', None)
+        return getattr(self.local, "network", None)
 
     def set_network(self, network: pylast.LastFMNetwork) -> None:
         """Sets a thread-local network context for cache deserialization.
@@ -73,7 +77,7 @@ class LastFMCache:
             A unique cache key.
         """
         key = f"{artist_name}-{track_name}"
-        return hashlib.md5(key.encode('utf-8')).hexdigest()
+        return hashlib.md5(key.encode("utf-8")).hexdigest()
 
     def get(self, artist_name: str, track_name: str) -> Optional[List[Dict[str, str]]]:
         """Retrieves cached data for a given artist and track.
@@ -86,7 +90,7 @@ class LastFMCache:
             A list of dictionaries representing similar tracks, or None if not in cache.
         """
         key = self.get_cache_key(artist_name, track_name)
-        cursor = self.connection.execute('SELECT data FROM cache WHERE key = ?', (key,))
+        cursor = self.connection.execute("SELECT data FROM cache WHERE key = ?", (key,))
         row = cursor.fetchone()
         if row:
             similar_tracks = json.loads(row[0])
@@ -94,7 +98,9 @@ class LastFMCache:
             return similar_tracks
         return None
 
-    def set(self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]]) -> None:
+    def set(
+        self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]]
+    ) -> None:
         """Caches similar tracks for a given artist and track.
 
         Args:
@@ -106,21 +112,25 @@ class LastFMCache:
         data_json = json.dumps(similar_tracks)
         try:
             with self.connection:
-                self.connection.execute('''
+                self.connection.execute(
+                    """
                     INSERT OR REPLACE INTO cache (key, data) 
                     VALUES (?, ?)
-                ''', (key, data_json))
+                """,
+                    (key, data_json),
+                )
                 logger.debug(f"Cached data for {artist_name} - {track_name}")
         except Exception as e:
             logger.error(f"Failed to set cache for {artist_name} - {track_name}: {e}")
 
-    def __enter__(self) -> 'LastFMCache':
+    def __enter__(self) -> "LastFMCache":
         """Enter the runtime context for this object."""
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         """Exit the runtime context, clean up resources."""
         self.connection.close()
+
 
 class LastFM:
     """Client to interact with the LastFM API using pylast."""
@@ -133,13 +143,17 @@ class LastFM:
                 api_key=API_KEY,
                 api_secret=API_SECRET,
                 username=USERNAME,
-                password_hash=PASSWORD_HASH
+                password_hash=PASSWORD_HASH,
             )
-        self.cache = LastFMCache()
+        self.cache = LastFMCache(CACHE_DB_FILE)
         if self.network:
-            self.cache.set_network(self.network)  # Set the network for the cache in a thread-safe manner
+            self.cache.set_network(
+                self.network
+            )  # Set the network for the cache in a thread-safe manner
 
-    def get_similar_tracks(self, artist_name: str, track_name: str) -> List[Dict[str, str]]:
+    def get_similar_tracks(
+        self, artist_name: str, track_name: str
+    ) -> List[Dict[str, str]]:
         """Gets similar tracks from Last.fm based on a given track.
 
         Args:
@@ -165,22 +179,30 @@ class LastFM:
             formatted_similar_tracks = []
             for similar_track in similar_tracks:
                 if isinstance(similar_track.item, pylast.Track):
-                    formatted_similar_tracks.append({
-                        'artist': similar_track.item.artist.name,
-                        'title': similar_track.item.title
-                    })
+                    formatted_similar_tracks.append(
+                        {
+                            "artist": similar_track.item.artist.name,
+                            "title": similar_track.item.title,
+                        }
+                    )
                 else:
-                    logger.warning(f"Unexpected similar track item type: {type(similar_track.item)}")
+                    logger.warning(
+                        f"Unexpected similar track item type: {type(similar_track.item)}"
+                    )
 
             logger.debug(f"Formatted similar tracks: {formatted_similar_tracks}")
             self.cache.set(artist_name, track_name, formatted_similar_tracks)
             return formatted_similar_tracks
 
         except pylast.WSError as e:
-            if 'Track not found' in str(e):
-                logger.debug(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+            if "Track not found" in str(e):
+                logger.debug(
+                    f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}"
+                )
             else:
-                logger.warning(f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}")
+                logger.warning(
+                    f"Failed to retrieve similar tracks for {artist_name} - {track_name}: {e}"
+                )
             return []
 
         except Exception as e:
@@ -193,9 +215,11 @@ class LastFM:
         Args:
             network: The pylast LastFMNetwork instance to set.
         """
-        self.cache.set_network(network)  # Set the network for the cache in a thread-safe manner
+        self.cache.set_network(
+            network
+        )  # Set the network for the cache in a thread-safe manner
 
-    def __enter__(self) -> 'LastFM':
+    def __enter__(self) -> "LastFM":
         """Enter the runtime context for this object."""
         return self
 
