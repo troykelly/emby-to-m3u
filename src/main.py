@@ -229,16 +229,12 @@ def generate_and_upload_radio_playlist(
         min_radio_duration: Minimum duration for the playlist.
         radio_dir: The directory to save the playlist.
     """
-    # Ensure thread-local network context is set
     lastfm.cache.set_network(lastfm.network)
     
     total_available_tracks = 0
     available_genres = []
     for genre in genres:
-        try:
-            normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
-        except ValueError:
-            pass
+        normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
         if normalized_genre is None:
             logger.warning(f"Skipping invalid genre: {genre}")
             continue        
@@ -250,7 +246,6 @@ def generate_and_upload_radio_playlist(
         else:
             logger.warning(f"No tracks available for genre: {normalized_genre}. Not using for playlist generation.")
             
-    # Ensure there is at least 1 available genre, return if not
     if len(available_genres) == 0:
         logger.warning(f"No tracks available for genres: {genres}. Skipping generation.")
         return
