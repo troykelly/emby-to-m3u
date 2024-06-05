@@ -182,26 +182,45 @@ class RadioPlaylistGenerator:
         Returns:
             True if the track is rejected, False otherwise.
         """
-        track_title = track.get('Name', '').lower()
-        album_title = track.get('Album', '').lower()
-        artist_name = track.get('AlbumArtist', '').lower()
-
-        # General rejections
-        if any(reject in track_title for reject in self.general_rejects['reject_playlist']) or \
-           any(reject in album_title for reject in self.general_rejects['reject_playlist']) or \
-           any(reject in artist_name for reject in self.general_rejects['reject_artist']):
+        if not track:
+            logger.warning("No track provided for rejection check.")
             return True
 
-        # Specific playlist rejections
-        specific_playlist_rejects = self.specific_rejects.get(f'{playlist_name}_playlist', [])
-        specific_artist_rejects = self.specific_rejects.get(f'{playlist_name}_artist', [])
+        try:
+            track_title = track.get('Name', '').strip().lower()
+            album_title = track.get('Album', '').strip().lower()
+            artist_name = track.get('AlbumArtist', '').strip().lower()
 
-        if any(reject in track_title for reject in specific_playlist_rejects) or \
-           any(reject in album_title for reject in specific_playlist_rejects) or \
-           any(reject in artist_name for reject in specific_artist_rejects):
+            if not track_title:
+                logger.warning("Track has no title or title is invalid: %s", track)
+            if not album_title:
+                logger.warning("Track has no album title or album title is invalid: %s", track)
+            if not artist_name:
+                logger.warning("Track has no artist name or artist name is invalid: %s", track)
+
+            # General rejections
+            if any(reject in track_title for reject in self.general_rejects.get('reject_playlist', [])):
+                return True
+            if any(reject in album_title for reject in self.general_rejects.get('reject_playlist', [])):
+                return True
+            if any(reject in artist_name for reject in self.general_rejects.get('reject_artist', [])):
+                return True
+
+            # Specific playlist rejections
+            specific_playlist_rejects = self.specific_rejects.get(f'{playlist_name}_playlist', [])
+            specific_artist_rejects = self.specific_rejects.get(f'{playlist_name}_artist', [])
+
+            if any(reject in track_title for reject in specific_playlist_rejects):
+                return True
+            if any(reject in album_title for reject in specific_playlist_rejects):
+                return True
+            if any(reject in artist_name for reject in specific_artist_rejects):
+                return True
+
+            return False
+        except Exception as e:
+            logger.error("An unexpected error occurred while checking if the track is rejected: %s", e)
             return True
-
-        return False
 
     def _remove_year_decade_filters(self, genres: List[str]) -> List[str]:
         """Remove year or decade filters from genre names.
