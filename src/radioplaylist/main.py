@@ -42,10 +42,18 @@ class RadioPlaylistGenerator:
 
     def load_general_rejects(self) -> Dict[str, List[str]]:
         """Load general reject patterns from environment variables."""
-        return {
-            'reject_playlist': [item.strip().lower() for item in os.getenv('RADIO_REJECT_PLAYLIST', "").split(',')],
-            'reject_artist': [item.strip().lower() for item in os.getenv('RADIO_REJECT_ARTIST', "").split(',')]
+        general_rejects = {
+            'reject_playlist': os.getenv('RADIO_REJECT_PLAYLIST', ""),
+            'reject_artist': os.getenv('RADIO_REJECT_ARTIST', "")
         }
+        for key in general_rejects:
+            if general_rejects[key]:
+                general_rejects[key] = [
+                    item.strip().lower() 
+                    for item in general_rejects[key].split(',') 
+                    if item and isinstance(item, str) and item.strip()
+                ]
+        return general_rejects
 
     def load_specific_rejects(self) -> Dict[str, List[str]]:
         """Load specific reject patterns for each playlist from environment variables."""
@@ -53,12 +61,22 @@ class RadioPlaylistGenerator:
         for key, value in os.environ.items():
             if key.startswith("RADIO_REJECT_PLAYLIST_"):
                 playlist_name = self.convert_env_key_to_name(key)
-                specific_rejects[f'{playlist_name}_playlist'] = [item.strip().lower() for item in value.split(',')]
+                if value:
+                    specific_rejects[f'{playlist_name}_playlist'] = [
+                        item.strip().lower() 
+                        for item in value.split(',') 
+                        if item and isinstance(item, str) and item.strip()
+                    ]
             
             if key.startswith("RADIO_REJECT_ARTIST_"):
                 playlist_name = self.convert_env_key_to_name(key)
-                specific_rejects[f'{playlist_name}_artist'] = [item.strip().lower() for item in value.split(',')]
-                
+                if value:
+                    specific_rejects[f'{playlist_name}_artist'] = [
+                        item.strip().lower() 
+                        for item in value.split(',') 
+                        if item and isinstance(item, str) and item.strip()
+                    ]
+
         return specific_rejects
 
     @staticmethod
@@ -97,23 +115,62 @@ class RadioPlaylistGenerator:
         Returns:
             A list of dictionaries containing similar track information.
         """
-        artist: Optional[str] = track.get('AlbumArtist')
-        title: Optional[str] = track.get('Name')
-        if not artist or not title:
+        if not track:
+            logger.warning("No track provided for getting similar tracks.")
             return []
 
-        similar_tracks: List[Dict[str, str]] = self.lastfm.get_similar_tracks(artist, title)
+        artist: Optional[str] = track.get('AlbumArtist')
+        title: Optional[str] = track.get('Name')
+
+        if not artist or not isinstance(artist, str) or not artist.strip():
+            logger.warning("Invalid or missing artist name in track: %s", track)
+            artist = None
+        else:
+            artist = artist.strip()
         
-        # Validate the format of the returned similar tracks
-        if not isinstance(similar_tracks, list) or not all(isinstance(t, dict) for t in similar_tracks):
-            logger.warning(f"Unexpected format for similar tracks for {artist} - {title}")
-            logger.warning(similar_tracks)
+        if not title or not isinstance(title, str) or not title.strip():
+            logger.warning("Invalid or missing track title in track: %s", track)
+            title = None
+        else:
+            title = title.strip()
+        
+        if not artist or not title:
+            logger.warning("Unable to proceed without valid artist and title.")
             return []
-        
-        # Remove tracks by the same artist from similar tracks
-        similar_tracks = [t for t in similar_tracks if t.get('artist', '').lower() != artist.lower()]
-        
-        return similar_tracks
+
+        try:
+            similar_tracks: List[Dict[str, str]] = self.lastfm.get_similar_tracks(artist, title)
+            
+            if not isinstance(similar_tracks, list) or any(not isinstance(t, dict) for t in similar_tracks):
+                logger.warning(
+                    "Unexpected format for similar tracks returned from LastFM for %s - %s",
+                    artist, title
+                )
+                return []
+
+            # Validate the format of the returned similar tracks
+            validated_similar_tracks = []
+            for similar_track in similar_tracks:
+                if (
+                    'artist' in similar_track and isinstance(similar_track['artist'], str) and similar_track['artist'].strip() and
+                    'title' in similar_track and isinstance(similar_track['title'], str) and similar_track['title'].strip()
+                ):
+                    validated_similar_tracks.append(similar_track)
+                else:
+                    logger.warning(
+                        "Invalid similar track format: %s", similar_track
+                    )
+            
+            # Remove tracks by the same artist from similar tracks
+            validated_similar_tracks = [
+                t for t in validated_similar_tracks if t['artist'].strip().lower() != artist.lower()
+            ]
+            
+            return validated_similar_tracks
+
+        except Exception as e:
+            logger.error("An unexpected error occurred while retrieving similar tracks: %s", e)
+            return []
 
     def _is_rejected(self, track: Dict[str, str], playlist_name: str) -> bool:
         """Check if a track should be rejected based on general and specific reject rules.

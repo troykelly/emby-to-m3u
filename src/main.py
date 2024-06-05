@@ -27,11 +27,10 @@ $ python3 main.py
 
 import os
 import logging
-import colorlog
 import requests
 import sys
 import signal
-import traceback
+import pytz
 from typing import List, Dict, Tuple, Any
 from datetime import datetime
 from collections import defaultdict
@@ -55,6 +54,10 @@ logger = logging.getLogger(__name__)
 
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
+TIMEZONE = os.getenv('TIMEZONE', 'Etc/UTC')
+
+DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         # Allow the default exception handler for KeyboardInterrupt
@@ -77,6 +80,53 @@ def get_batch_size(default=1):
     except ValueError:
         logger.warning(f"Invalid M3U_BATCH_SIZE '{batch_size_str}', using default of {default}.")
         return default
+
+def get_day_order_reference(timezone_str: str = "Etc/UTC") -> List[str]:
+    """Determine the day order reference based on the provided timezone.
+    
+    If the local time is after 6pm, use the next day,
+    otherwise, use today.
+
+    Args:
+        timezone_str: A string representing the timezone (e.g., "Australia/Sydney").
+                      Defaults to "Etc/UTC".
+
+    Returns:
+        A list of day names starting from the reference day.
+    """
+    try:
+        timezone = pytz.timezone(timezone_str)
+    except pytz.UnknownTimeZoneError:
+        timezone = pytz.timezone("Etc/UTC")
+    
+    now = datetime.now(timezone)
+    if now.hour >= 18:
+        # After 6pm, use the next day
+        current_day_index = (now.weekday() + 1) % 7
+    else:
+        # Before 6pm, use today
+        current_day_index = now.weekday()
+    
+    return [DAY_NAMES[(current_day_index + i) % 7] for i in range(7)]
+
+def order_radio_playlist_items(radio_playlist_items: List[Tuple[str, List[str]]]) -> List[Tuple[str, List[str]]]:
+    """Order the radio playlist items based on the day name and other criteria."""
+    day_order = get_day_order_reference()
+    
+    def playlist_order_key(item: Tuple[str, List[str]]) -> Tuple[int, int]:
+        time_segment, _ = item
+        time_segment_lower = time_segment.lower()
+        
+        # Determine day position
+        day_position = next((idx for idx, day in enumerate(day_order) if day in time_segment_lower), 8)  # Default to 8 if no day name
+        
+        # Determine if there's no day name
+        no_day_present = 1 if any(day in time_segment_lower for day in DAY_NAMES) else 0
+        
+        return (no_day_present, day_position)
+    
+    # Sort by the criteria: no day name first, then by the day order
+    return sorted(radio_playlist_items, key=playlist_order_key)
 
 def generate_playlists() -> None:
     """Main function to generate m3u playlists for genres, artists, albums, and years."""
@@ -117,7 +167,7 @@ def generate_playlists() -> None:
     radio_generator = RadioPlaylistGenerator(playlist_manager, lastfm, azuracast_sync)
 
     # Generate radio playlists in batches
-    radio_playlist_items = list(radio_generator.playlists.items())
+    radio_playlist_items = order_radio_playlist_items(list(radio_generator.playlists.items()))
     
     generate_playlists_in_batches(radio_generator, azuracast_sync, lastfm, radio_playlist_items, min_radio_duration, radio_dir, get_batch_size())
 
@@ -185,7 +235,10 @@ def generate_and_upload_radio_playlist(
     total_available_tracks = 0
     available_genres = []
     for genre in genres:
-        normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
+        try:
+            normalized_genre = radio_generator.playlist_manager._normalize_genre(genre)
+        except ValueError:
+            pass
         if normalized_genre is None:
             logger.warning(f"Skipping invalid genre: {genre}")
             continue        

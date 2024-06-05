@@ -1,5 +1,5 @@
 anyio==4.4.0
-certifi==2024.6.2
+certifi==2024.2.2
 charset-normalizer==3.3.2
 colorlog==6.8.2
 croniter==2.0.5
