@@ -17,7 +17,7 @@ pylast==5.5.0
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
-requests==2.32.4
+requests==2.32.5
 schedule==1.2.2
 setuptools==80.9.0
 six==1.17.0
