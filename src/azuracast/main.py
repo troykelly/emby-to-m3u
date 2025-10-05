@@ -11,10 +11,13 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from tqdm import tqdm
-from track.main import Track
+from src.track.main import Track
 
-from replaygain.main import has_replaygain_metadata
-from logger import setup_logging
+from src.replaygain.main import has_replaygain_metadata
+from src.logger import setup_logging
+from .cache import get_cached_known_tracks
+from .detection import check_file_in_azuracast as check_file_duplicate
+from .models import DetectionStrategy
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -37,6 +40,22 @@ class AzuraCastSync:
         self.api_key: str = os.getenv("AZURACAST_API_KEY", "")
         self.station_id: str = os.getenv("AZURACAST_STATIONID", "")
 
+        # T031: Cache and detection configuration
+        self._cache_ttl: int = int(os.getenv("AZURACAST_CACHE_TTL", "300"))
+        self._force_reupload: bool = os.getenv("AZURACAST_FORCE_REUPLOAD", "false").lower() == "true"
+        self._legacy_detection: bool = os.getenv("AZURACAST_LEGACY_DETECTION", "false").lower() == "true"
+        self._skip_replaygain_check: bool = os.getenv("AZURACAST_SKIP_REPLAYGAIN_CHECK", "false").lower() == "true"
+
+        # T036: Configuration validation
+        if not self.host:
+            logger.warning("AZURACAST_HOST not set - API calls will fail")
+        if not self.api_key:
+            logger.warning("AZURACAST_API_KEY not set - API calls will fail")
+        if not self.station_id:
+            logger.warning("AZURACAST_STATIONID not set - API calls will fail")
+
+        logger.info(f"AzuraCast initialized: cache_ttl={self._cache_ttl}s, force_reupload={self._force_reupload}, legacy_detection={self._legacy_detection}")
+
     def _get_session(self) -> requests.Session:
         """Creates a new session with retry strategy.
 
@@ -53,6 +72,11 @@ class AzuraCastSync:
         adapter: HTTPAdapter = HTTPAdapter(max_retries=retries)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        # Disable SSL verification for self-signed certificates
+        session.verify = False
+        # Suppress warnings about unverified HTTPS requests
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         return session
 
     def _perform_request(
@@ -108,6 +132,25 @@ class AzuraCastSync:
                 if response.status_code == 404:
                     logger.warning("Attempt %d: Request to %s resulted in 404 Not Found", attempt, url)
                     return response  # Handle 404 gracefully by returning the response
+
+                # T033: Handle rate limiting (429 Too Many Requests)
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            wait_time = int(retry_after)
+                        except ValueError:
+                            wait_time = min(BASE_BACKOFF * (2 ** attempt), MAX_BACKOFF)
+                    else:
+                        wait_time = min(BASE_BACKOFF * (2 ** attempt), MAX_BACKOFF)
+
+                    logger.warning(
+                        "Attempt %d: Rate limited (429). Waiting %d seconds before retry...",
+                        attempt,
+                        wait_time,
+                    )
+                    time.sleep(wait_time)
+                    continue
 
                 response.raise_for_status()
 
@@ -171,26 +214,39 @@ class AzuraCastSync:
         Returns:
             True if the file is known to AzuraCast, False otherwise.
         """
-        artist: str = track.get("AlbumArtist", "")
-        album: str = track.get("Album", "")
-        title: str = track.get("Name", "")
-        length: str = str(track.get("RunTimeTicks", 0) // 10000000)  # Convert ticks to seconds
+        # T032: Use new detection logic unless legacy mode enabled
+        if self._legacy_detection:
+            # Legacy exact string matching
+            artist: str = track.get("AlbumArtist", "")
+            album: str = track.get("Album", "")
+            title: str = track.get("Name", "")
 
-        for known_track in known_tracks:
-            if (
-                known_track.get("artist") == artist
-                and known_track.get("album") == album
-                and known_track.get("title") == title
-            ):
-                track["azuracast_file_id"] = known_track["id"]
-                logger.debug(
-                    "File '%s' already exists in Azuracast with ID '%s'",
-                    title,
-                    track["azuracast_file_id"],
-                )
-                return True
-        logger.debug("File '%s' does not exist in Azuracast", title)
-        return False
+            for known_track in known_tracks:
+                if (
+                    known_track.get("artist") == artist
+                    and known_track.get("album") == album
+                    and known_track.get("title") == title
+                ):
+                    track["azuracast_file_id"] = known_track["id"]
+                    logger.debug(
+                        "File '%s' already exists in Azuracast with ID '%s' (legacy detection)",
+                        title,
+                        track["azuracast_file_id"],
+                    )
+                    return True
+            logger.debug("File '%s' does not exist in Azuracast (legacy detection)", title)
+            return False
+
+        # New multi-strategy detection
+        decision = check_file_duplicate(known_tracks, track)
+
+        # T035: INFO-level logging for duplicate decisions
+        logger.info(decision.log_message())
+
+        if not decision.should_upload:
+            track["azuracast_file_id"] = decision.azuracast_file_id
+
+        return not decision.should_upload
 
     def upload_file_to_azuracast(self, file_content: bytes, file_key: str) -> Dict[str, Any]:
         """Uploads a file to AzuraCast.
@@ -333,16 +389,25 @@ class AzuraCastSync:
         artist_name: str = track.get("AlbumArtist", "Unknown Artist")
         title: str = track.get("Name", "Unknown Title")
 
-        try:
-            known_tracks: List[Dict[str, Any]] = self.get_known_tracks()
+        # Mark track as not uploaded by default
+        track._was_uploaded = False
 
-            if not self.check_file_in_azuracast(known_tracks, track):
+        try:
+            # Use cached known tracks with TTL management
+            known_tracks: List[Dict[str, Any]] = get_cached_known_tracks(
+                fetch_fn=self.get_known_tracks,
+                force_refresh=self._force_reupload
+            )
+
+            # Force reupload mode bypasses duplicate detection
+            if self._force_reupload or not self.check_file_in_azuracast(known_tracks, track):
                 pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
                 # File does not exist, proceed with upload
                 file_content: bytes = track.download()
                 upload_response: Dict[str, Any] = self.upload_file_to_azuracast(file_content, self.generate_file_path(track))
                 track["azuracast_file_id"] = upload_response.get("id")
                 if track["azuracast_file_id"]:
+                    track._was_uploaded = True
                     logger.debug(
                         "Uploaded file '%s' to Azuracast with ID '%s'",
                         track["Name"],
@@ -362,6 +427,15 @@ class AzuraCastSync:
                     return False
 
                 track_id: str = track["azuracast_file_id"]
+                # Skip ReplayGain check if configured to do so
+                if self._skip_replaygain_check:
+                    logger.debug(
+                        "File '%s' already exists in Azuracast with ID '%s' (ReplayGain check skipped)",
+                        track["Name"],
+                        track["azuracast_file_id"],
+                    )
+                    return True
+
                 file_content: bytes = self.download_file_from_azuracast(track_id)
                 content: BytesIO = BytesIO(file_content)
 
@@ -470,20 +544,42 @@ class AzuraCastSync:
             Returns:
                 True if the playlist upload was successful.
             """
+        # T034: Pre-count tracks that will need upload for progress reporting
+        total_tracks = len(playlist)
+        uploaded_count = 0
+        skipped_count = 0
+        failed_count = 0
+
         with tqdm(
-            total=len(playlist), desc="Uploading tracks to AzuraCast", unit="track"
+            total=total_tracks, desc="Uploading tracks to AzuraCast", unit="track"
         ) as pbar_upload_playlist:
             for track in playlist:
                 artist_name: str = track.get("AlbumArtist", "Unknown Artist")
                 title: str = track.get("Name", "Unknown Title")
                 pbar_upload_playlist.set_description(f"Checking '{title}' by '{artist_name}'")
                 try:
-                    if not self.upload_file_and_set_track_id(track, pbar_upload_playlist):
+                    result = self.upload_file_and_set_track_id(track, pbar_upload_playlist)
+                    if result:
+                        if "azuracast_file_id" in track:
+                            # Track was either uploaded or already existed
+                            if hasattr(track, '_was_uploaded') and track._was_uploaded:
+                                uploaded_count += 1
+                            else:
+                                skipped_count += 1
+                    else:
+                        failed_count += 1
                         logger.warning("Failed to upload '%s' to Azuracast", track["Name"])
                 except Exception as e:
+                    failed_count += 1
                     logger.error(f"Failed to process track '{title}' by '{artist_name}': {e}")
                 finally:
                     pbar_upload_playlist.update(1)
+
+        # T034: Generate summary report
+        logger.info(
+            f"Upload complete: {uploaded_count} uploaded, {skipped_count} skipped (duplicates), "
+            f"{failed_count} failed out of {total_tracks} total tracks"
+        )
 
         return True
 
