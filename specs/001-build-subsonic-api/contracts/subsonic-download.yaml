@@ -1,0 +1,167 @@
+openapi: 3.0.3
+info:
+  title: Subsonic API - Download Endpoint
+  version: 1.16.1
+  description: |
+    Contract specification for Subsonic download endpoint.
+    Downloads binary audio files for streaming or local playback.
+
+servers:
+  - url: https://music.example.com/rest
+    description: Subsonic API server
+
+paths:
+  /download:
+    get:
+      summary: Download audio track
+      description: |
+        Downloads the binary audio file for a given track.
+        Returns raw audio data in the track's original or transcoded format.
+      operationId: downloadTrack
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Track ID to download
+          schema:
+            type: string
+            example: "300"
+        - name: u
+          in: query
+          required: true
+          description: Username for authentication
+          schema:
+            type: string
+        - name: t
+          in: query
+          required: true
+          description: Authentication token (MD5 hash)
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+        - name: s
+          in: query
+          required: true
+          description: Salt used for token generation
+          schema:
+            type: string
+            minLength: 6
+        - name: v
+          in: query
+          required: true
+          description: API version
+          schema:
+            type: string
+            example: "1.16.1"
+        - name: c
+          in: query
+          required: true
+          description: Client application name
+          schema:
+            type: string
+            example: "playlistgen"
+        - name: f
+          in: query
+          required: true
+          description: Response format
+          schema:
+            type: string
+            enum: [json, xml]
+            default: json
+      responses:
+        '200':
+          description: Binary audio file
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+                description: MP3 audio file
+              example: <binary MP3 data>
+            audio/flac:
+              schema:
+                type: string
+                format: binary
+                description: FLAC audio file
+              example: <binary FLAC data>
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+                description: OGG Vorbis audio file
+              example: <binary OGG data>
+            audio/mp4:
+              schema:
+                type: string
+                format: binary
+                description: M4A/AAC audio file
+              example: <binary M4A data>
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+                description: WAV audio file
+              example: <binary WAV data>
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              description: Error response (only when download fails)
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+            version:
+              type: string
+              example: "1.16.1"
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                  description: |
+                    Error codes:
+                    - 40: Wrong username or password
+                    - 70: Requested data not found
+                  enum: [40, 70]
+                message:
+                  type: string
+                  example: "Song not found."
+
+  securitySchemes:
+    SubsonicAuth:
+      type: apiKey
+      in: query
+      name: t
+      description: Token-based authentication using MD5(password + salt)
+
+security:
+  - SubsonicAuth: []

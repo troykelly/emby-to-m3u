@@ -130,17 +130,26 @@ class PlaylistManager:
 
 
     def fetch_tracks(self) -> None:
-        """Fetches all audio items with basic metadata from Emby."""
-        with tqdm(total=1, desc="Fetching all tracks from Emby", unit="list") as list_prog:
-            all_audio_items = self._get_emby_data(
-                '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
-                'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,'
-                'MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,'
-                'TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
-            )
-            list_prog.update(1)
-            from track.main import Track  # Local import to avoid circular dependency
-            self.tracks = [Track(item, self) for item in all_audio_items.get('Items', [])]
+        """Fetch tracks from configured music source (Subsonic or Emby)."""
+        subsonic_url = os.getenv('SUBSONIC_URL')
+
+        if subsonic_url:
+            # Subsonic takes precedence
+            logger.info("Subsonic URL configured, using Subsonic as music source")
+            self._fetch_from_subsonic()
+        else:
+            # Fall back to Emby
+            logger.info("Subsonic not configured, falling back to Emby")
+            with tqdm(total=1, desc="Fetching all tracks from Emby", unit="list") as list_prog:
+                all_audio_items = self._get_emby_data(
+                    '/Items?Recursive=true&IncludeItemTypes=Audio&Fields='
+                    'Path,RunTimeTicks,Name,Album,AlbumArtist,Genres,IndexNumber,ProductionYear,PremiereDate,ExternalIds,'
+                    'MusicBrainzAlbumId,MusicBrainzArtistId,MusicBrainzReleaseGroupId,ParentIndexNumber,ProviderIds,'
+                    'TheAudioDbAlbumId,TheAudioDbArtistId&SortBy=SortName&SortOrder=Ascending'
+                )
+                list_prog.update(1)
+                from track.main import Track  # Local import to avoid circular dependency
+                self.tracks = [Track(item, self) for item in all_audio_items.get('Items', [])]
 
     def _get_emby_data(self, endpoint: str) -> Dict[str, Any]:
         """Retrieves data from a given Emby API endpoint.
@@ -157,6 +166,70 @@ class PlaylistManager:
         response = requests.get(url)
         response.raise_for_status()
         return response.json()
+
+    def _fetch_from_subsonic(self) -> None:
+        """Fetch tracks from Subsonic server using ID3 browsing."""
+        from subsonic.client import SubsonicClient
+        from subsonic.models import SubsonicConfig
+        from subsonic.transform import transform_subsonic_track, is_duplicate
+
+        config = SubsonicConfig(
+            url=os.getenv('SUBSONIC_URL'),
+            username=os.getenv('SUBSONIC_USER'),
+            password=os.getenv('SUBSONIC_PASSWORD'),
+            client_name=os.getenv('SUBSONIC_CLIENT_NAME', 'playlistgen'),
+            api_version=os.getenv('SUBSONIC_API_VERSION', '1.16.1')
+        )
+
+        with SubsonicClient(config) as client:
+            if not client.ping():
+                logger.error("Failed to connect to Subsonic server")
+                return
+
+            all_tracks = []
+
+            # Step 1: Get all artists using ID3 browsing
+            logger.info("Fetching artists from Subsonic server...")
+            artists = client.get_artists()
+            logger.info(f"Found {len(artists)} artists")
+
+            # Step 2: For each artist, get albums
+            for artist in artists:
+                artist_id = artist['id']
+                artist_name = artist['name']
+
+                try:
+                    artist_data = client.get_artist(artist_id)
+                    albums = artist_data.get('album', [])
+                    logger.debug(f"Artist '{artist_name}': {len(albums)} albums")
+
+                    # Step 3: For each album, get tracks
+                    for album in albums:
+                        album_id = album['id']
+                        album_name = album.get('name', 'Unknown')
+
+                        try:
+                            tracks = client.get_album(album_id)
+                            logger.debug(f"Album '{album_name}': {len(tracks)} tracks")
+
+                            # Transform and add tracks
+                            for st in tracks:
+                                track = transform_subsonic_track(st, self)
+                                # Check if this track is a duplicate of any existing track
+                                is_dup = any(is_duplicate(track, existing) for existing in self.tracks)
+                                if not is_dup:
+                                    self.add_track(track)
+                                    all_tracks.append(track)
+
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch album {album_id} ({album_name}): {e}")
+                            continue
+
+                except Exception as e:
+                    logger.warning(f"Failed to fetch artist {artist_id} ({artist_name}): {e}")
+                    continue
+
+            logger.info(f"Successfully fetched {len(all_tracks)} tracks from Subsonic (ID3 browsing)")
 
     def categorize_tracks(self) -> None:
         """Categorizes tracks by genre, artist, album, year, and decade."""

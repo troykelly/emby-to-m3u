@@ -1,0 +1,391 @@
+openapi: 3.0.3
+info:
+  title: Subsonic API - ID3 Album Endpoint
+  version: 1.16.1
+  description: |
+    Contract specification for Subsonic getAlbum endpoint.
+    Returns detailed album information including all songs/tracks.
+    Part of ID3 browsing workflow: getArtists → getArtist → getAlbum
+
+    Critical fields for M3U playlist generation:
+    - id: Track identifier for streaming
+    - parent: Album ID reference
+    - albumId: Album ID (same as parent)
+    - artistId: Artist ID reference
+    - isDir: Should be false for playable tracks
+    - isVideo: Filter this to exclude video content
+    - type: Should be "music" for audio tracks
+
+servers:
+  - url: https://music.example.com/rest
+    description: Subsonic API server
+
+paths:
+  /getAlbum:
+    get:
+      summary: Get album details (ID3)
+      description: |
+        Returns detailed information about a specific album including all songs.
+        This is the final step in ID3-based library browsing.
+        Use isVideo=false to filter out video content and get only audio tracks.
+      operationId: getAlbum
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Album ID from getArtist response
+          schema:
+            type: string
+            example: "al-200"
+        - name: u
+          in: query
+          required: true
+          description: Username for authentication
+          schema:
+            type: string
+        - name: t
+          in: query
+          required: true
+          description: Authentication token (MD5 hash)
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+        - name: s
+          in: query
+          required: true
+          description: Salt used for token generation
+          schema:
+            type: string
+            minLength: 6
+        - name: v
+          in: query
+          required: true
+          description: API version
+          schema:
+            type: string
+            example: "1.16.1"
+        - name: c
+          in: query
+          required: true
+          description: Client application name
+          schema:
+            type: string
+            example: "playlistgen"
+        - name: f
+          in: query
+          required: true
+          description: Response format
+          schema:
+            type: string
+            enum: [json, xml]
+            default: json
+      responses:
+        '200':
+          description: Album details with songs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumResponse'
+              example:
+                subsonic-response:
+                  status: ok
+                  version: "1.16.1"
+                  album:
+                    id: "al-200"
+                    name: "A Night at the Opera"
+                    artist: "Queen"
+                    artistId: "ar-100"
+                    coverArt: "al-200"
+                    songCount: 12
+                    duration: 2561
+                    created: "2024-01-15T10:30:00.000Z"
+                    year: 1975
+                    genre: "Rock"
+                    song:
+                      - id: "300"
+                        parent: "al-200"
+                        title: "Bohemian Rhapsody"
+                        album: "A Night at the Opera"
+                        artist: "Queen"
+                        albumId: "al-200"
+                        artistId: "ar-100"
+                        track: 11
+                        year: 1975
+                        genre: "Rock"
+                        coverArt: "al-200"
+                        size: 8503491
+                        contentType: "audio/mpeg"
+                        suffix: "mp3"
+                        duration: 354
+                        bitRate: 320
+                        path: "Queen/A Night at the Opera/11 Bohemian Rhapsody.mp3"
+                        created: "2024-01-15T10:30:00.000Z"
+                        musicBrainzId: "b1a9c0e9-d987-4042-ae91-78d6a3267d69"
+                        isDir: false
+                        isVideo: false
+                        type: "music"
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Album not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    AlbumResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - album
+          properties:
+            status:
+              type: string
+              enum: [ok]
+            version:
+              type: string
+              example: "1.16.1"
+            album:
+              $ref: '#/components/schemas/AlbumDetail'
+
+    AlbumDetail:
+      type: object
+      required:
+        - id
+        - name
+        - artist
+        - artistId
+        - songCount
+        - duration
+        - created
+        - song
+      properties:
+        id:
+          type: string
+          description: Unique album identifier
+          example: "al-200"
+        name:
+          type: string
+          description: Album title
+          example: "A Night at the Opera"
+        artist:
+          type: string
+          description: Artist name
+          example: "Queen"
+        artistId:
+          type: string
+          description: Artist ID reference
+          example: "ar-100"
+        coverArt:
+          type: string
+          description: Cover art identifier (optional)
+          example: "al-200"
+        songCount:
+          type: integer
+          description: Number of songs in album
+          minimum: 0
+          example: 12
+        duration:
+          type: integer
+          description: Total duration in seconds
+          minimum: 0
+          example: 2561
+        created:
+          type: string
+          format: date-time
+          description: Timestamp when album was added to library
+          example: "2024-01-15T10:30:00.000Z"
+        year:
+          type: integer
+          description: Release year (optional)
+          minimum: 1000
+          maximum: 9999
+          example: 1975
+        genre:
+          type: string
+          description: Music genre (optional)
+          example: "Rock"
+        song:
+          type: array
+          description: Songs/tracks in this album
+          items:
+            $ref: '#/components/schemas/Song'
+
+    Song:
+      type: object
+      required:
+        - id
+        - parent
+        - albumId
+        - artistId
+        - isDir
+        - isVideo
+        - type
+      properties:
+        id:
+          type: string
+          description: Unique track identifier (CRITICAL for M3U streaming)
+          example: "300"
+        parent:
+          type: string
+          description: Album ID (CRITICAL - must match albumId)
+          example: "al-200"
+        title:
+          type: string
+          description: Track title
+          example: "Bohemian Rhapsody"
+        album:
+          type: string
+          description: Album name
+          example: "A Night at the Opera"
+        artist:
+          type: string
+          description: Artist name
+          example: "Queen"
+        albumId:
+          type: string
+          description: Album ID reference (CRITICAL - must match parent)
+          example: "al-200"
+        artistId:
+          type: string
+          description: Artist ID reference (CRITICAL)
+          example: "ar-100"
+        track:
+          type: integer
+          description: Track number in album
+          minimum: 1
+          example: 11
+        year:
+          type: integer
+          description: Release year
+          minimum: 1000
+          maximum: 9999
+          example: 1975
+        genre:
+          type: string
+          description: Music genre
+          example: "Rock"
+        coverArt:
+          type: string
+          description: Cover art identifier
+          example: "al-200"
+        size:
+          type: integer
+          description: File size in bytes
+          minimum: 0
+          example: 8503491
+        contentType:
+          type: string
+          description: MIME type of audio file
+          example: "audio/mpeg"
+        suffix:
+          type: string
+          description: File extension
+          example: "mp3"
+        duration:
+          type: integer
+          description: Duration in seconds
+          minimum: 0
+          example: 354
+        bitRate:
+          type: integer
+          description: Bitrate in kbps
+          minimum: 0
+          example: 320
+        path:
+          type: string
+          description: File path on server
+          example: "Queen/A Night at the Opera/11 Bohemian Rhapsody.mp3"
+        created:
+          type: string
+          format: date-time
+          description: Timestamp when track was added
+          example: "2024-01-15T10:30:00.000Z"
+        musicBrainzId:
+          type: string
+          format: uuid
+          description: MusicBrainz recording ID (optional)
+          example: "b1a9c0e9-d987-4042-ae91-78d6a3267d69"
+        isDir:
+          type: boolean
+          description: CRITICAL - Should be false for playable tracks
+          example: false
+        isVideo:
+          type: boolean
+          description: CRITICAL - Filter this to exclude video content (use isVideo=false)
+          example: false
+        type:
+          type: string
+          description: CRITICAL - Should be "music" for audio tracks, "video" for videos
+          enum: [music, video]
+          example: "music"
+        discNumber:
+          type: integer
+          description: Disc number in multi-disc album (optional)
+          minimum: 1
+        starred:
+          type: string
+          format: date-time
+          description: Timestamp when track was starred (optional)
+        userRating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: User rating (1-5 stars, optional)
+
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+            version:
+              type: string
+              example: "1.16.1"
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                  description: |
+                    Error codes:
+                    - 40: Wrong username or password
+                    - 70: Album not found
+                  enum: [40, 70]
+                message:
+                  type: string
+                  example: "Album not found."
+
+  securitySchemes:
+    SubsonicAuth:
+      type: apiKey
+      in: query
+      name: t
+      description: Token-based authentication using MD5(password + salt)
+
+security:
+  - SubsonicAuth: []
