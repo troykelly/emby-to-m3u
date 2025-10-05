@@ -1,0 +1,243 @@
+{
+  "ping_success": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1"
+    }
+  },
+  "ping_auth_failure": {
+    "subsonic-response": {
+      "status": "failed",
+      "version": "1.16.1",
+      "error": {
+        "code": 40,
+        "message": "Wrong username or password."
+      }
+    }
+  },
+  "getSongs_page1": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "songs": {
+        "song": [
+          {
+            "id": "300",
+            "title": "Bohemian Rhapsody",
+            "artist": "Queen",
+            "album": "A Night at the Opera",
+            "genre": "Rock",
+            "track": 11,
+            "discNumber": 1,
+            "year": 1975,
+            "duration": 354,
+            "musicBrainzId": "b1a9c0e9-d987-4042-ae91-78d6a3267d69",
+            "path": "Queen/A Night at the Opera/11 Bohemian Rhapsody.mp3",
+            "suffix": "mp3",
+            "created": "2024-01-15T10:30:00.000Z",
+            "coverArt": "al-300",
+            "size": 8503491,
+            "bitRate": 320,
+            "contentType": "audio/mpeg"
+          },
+          {
+            "id": "301",
+            "title": "We Will Rock You",
+            "artist": "Queen",
+            "album": "News of the World",
+            "genre": "Rock",
+            "track": 1,
+            "year": 1977,
+            "duration": 122,
+            "path": "Queen/News of the World/01 We Will Rock You.flac",
+            "suffix": "flac",
+            "created": "2024-01-15T11:00:00.000Z",
+            "size": 15234567,
+            "bitRate": 1411,
+            "contentType": "audio/flac"
+          }
+        ]
+      }
+    }
+  },
+  "getSongs_empty": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "songs": {
+        "song": []
+      }
+    }
+  },
+  "stream_not_found": {
+    "subsonic-response": {
+      "status": "failed",
+      "version": "1.16.1",
+      "error": {
+        "code": 70,
+        "message": "Song not found."
+      }
+    }
+  },
+  "generic_error": {
+    "subsonic-response": {
+      "status": "failed",
+      "version": "1.16.1",
+      "error": {
+        "code": 0,
+        "message": "A generic error."
+      }
+    }
+  },
+  "getAlbum_success": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "album": {
+        "id": "200",
+        "name": "A Night at the Opera",
+        "artist": "Queen",
+        "artistId": "100",
+        "coverArt": "al-200",
+        "songCount": 2,
+        "duration": 476,
+        "created": "2024-01-15T10:00:00.000Z",
+        "year": 1975,
+        "genre": "Rock",
+        "song": [
+          {
+            "id": "300",
+            "parent": "200",
+            "title": "Bohemian Rhapsody",
+            "artist": "Queen",
+            "artistId": "100",
+            "album": "A Night at the Opera",
+            "albumId": "200",
+            "genre": "Rock",
+            "track": 11,
+            "discNumber": 1,
+            "year": 1975,
+            "duration": 354,
+            "musicBrainzId": "b1a9c0e9-d987-4042-ae91-78d6a3267d69",
+            "path": "Queen/A Night at the Opera/11 Bohemian Rhapsody.mp3",
+            "suffix": "mp3",
+            "created": "2024-01-15T10:30:00.000Z",
+            "coverArt": "al-200",
+            "size": 8503491,
+            "bitRate": 320,
+            "contentType": "audio/mpeg",
+            "isVideo": false,
+            "isDir": false,
+            "type": "music"
+          },
+          {
+            "id": "301",
+            "parent": "200",
+            "title": "Death on Two Legs",
+            "artist": "Queen",
+            "artistId": "100",
+            "album": "A Night at the Opera",
+            "albumId": "200",
+            "genre": "Rock",
+            "track": 1,
+            "year": 1975,
+            "duration": 122,
+            "path": "Queen/A Night at the Opera/01 Death on Two Legs.flac",
+            "suffix": "flac",
+            "created": "2024-01-15T10:15:00.000Z",
+            "size": 15234567,
+            "bitRate": 1411,
+            "contentType": "audio/flac",
+            "isVideo": false,
+            "isDir": false,
+            "type": "music"
+          }
+        ]
+      }
+    }
+  },
+  "getAlbum_empty": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "album": {
+        "id": "201",
+        "name": "Empty Album",
+        "artist": "Test Artist",
+        "song": []
+      }
+    }
+  },
+  "getAlbum_with_video": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "album": {
+        "id": "202",
+        "name": "Mixed Album",
+        "artist": "Test Artist",
+        "song": [
+          {
+            "id": "400",
+            "parent": "202",
+            "title": "Audio Track",
+            "artist": "Test Artist",
+            "artistId": "101",
+            "album": "Mixed Album",
+            "albumId": "202",
+            "duration": 180,
+            "isVideo": false
+          },
+          {
+            "id": "401",
+            "parent": "202",
+            "title": "Video Track",
+            "artist": "Test Artist",
+            "album": "Mixed Album",
+            "duration": 240,
+            "isVideo": true
+          }
+        ]
+      }
+    }
+  },
+  "getAlbum_missing_fields": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "album": {
+        "id": "203",
+        "name": "Minimal Album",
+        "song": [
+          {
+            "id": "500",
+            "title": "Valid Track",
+            "parent": "203",
+            "albumId": "203",
+            "artistId": "102"
+          },
+          {
+            "title": "Invalid Track - No ID"
+          },
+          {
+            "id": "502",
+            "parent": "203"
+          }
+        ]
+      }
+    }
+  },
+  "ping_opensubsonic": {
+    "subsonic-response": {
+      "status": "ok",
+      "version": "1.16.1",
+      "openSubsonic": {
+        "serverVersion": "0.1.0",
+        "extensions": [
+          "formPost",
+          "transcodeOffset"
+        ]
+      }
+    }
+  }
+}

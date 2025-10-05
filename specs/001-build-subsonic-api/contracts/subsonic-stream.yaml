@@ -1,0 +1,264 @@
+openapi: 3.0.3
+info:
+  title: Subsonic Streaming API Contract
+  description: Contract specification for streaming/downloading audio files from Subsonic API
+  version: 1.16.1
+  contact:
+    name: Subsonic API Documentation
+    url: http://www.subsonic.org/pages/api.jsp
+
+servers:
+  - url: '{serverUrl}/rest'
+    variables:
+      serverUrl:
+        default: https://music.example.com
+        description: Subsonic server base URL
+
+paths:
+  /stream:
+    get:
+      summary: Stream or download audio file
+      description: |
+        Returns a single audio file. Supports streaming and direct download.
+        The file format and bitrate depend on the original file on the server.
+      operationId: stream
+      parameters:
+        - $ref: '#/components/parameters/Username'
+        - $ref: '#/components/parameters/Token'
+        - $ref: '#/components/parameters/Salt'
+        - $ref: '#/components/parameters/Version'
+        - $ref: '#/components/parameters/Client'
+        - name: id
+          in: query
+          required: true
+          description: Track ID to stream/download
+          schema:
+            type: string
+            example: "300"
+        - name: maxBitRate
+          in: query
+          required: false
+          description: Maximum bitrate in kbps (optional transcoding)
+          schema:
+            type: integer
+            minimum: 0
+            example: 320
+        - name: format
+          in: query
+          required: false
+          description: Target format for transcoding (optional)
+          schema:
+            type: string
+            enum: [mp3, flac, aac, ogg, wav]
+            example: mp3
+        - name: estimateContentLength
+          in: query
+          required: false
+          description: If true, server includes Content-Length estimate
+          schema:
+            type: boolean
+            default: false
+
+      responses:
+        '200':
+          description: Successful stream/download
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+                description: Binary audio file content
+          headers:
+            Content-Type:
+              description: MIME type of audio file
+              schema:
+                type: string
+                example: audio/mpeg
+            Content-Length:
+              description: File size in bytes (if available)
+              schema:
+                type: integer
+                example: 8503491
+            Content-Disposition:
+              description: Suggested filename for download
+              schema:
+                type: string
+                example: 'inline; filename="Bohemian Rhapsody.mp3"'
+
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                authFailed:
+                  summary: Authentication failed
+                  value:
+                    subsonic-response:
+                      status: failed
+                      version: "1.16.1"
+                      error:
+                        code: 40
+                        message: "Wrong username or password."
+
+        '404':
+          description: Song not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notFound:
+                  summary: Song not found
+                  value:
+                    subsonic-response:
+                      status: failed
+                      version: "1.16.1"
+                      error:
+                        code: 70
+                        message: "Song not found."
+
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                serverError:
+                  summary: Generic server error
+                  value:
+                    subsonic-response:
+                      status: failed
+                      version: "1.16.1"
+                      error:
+                        code: 0
+                        message: "A generic error."
+
+  /download:
+    get:
+      summary: Download audio file (alias for stream)
+      description: |
+        Identical to /stream but explicitly for downloading (not streaming).
+        Returns the raw audio file without transcoding.
+      operationId: download
+      parameters:
+        - $ref: '#/components/parameters/Username'
+        - $ref: '#/components/parameters/Token'
+        - $ref: '#/components/parameters/Salt'
+        - $ref: '#/components/parameters/Version'
+        - $ref: '#/components/parameters/Client'
+        - name: id
+          in: query
+          required: true
+          description: Track ID to download
+          schema:
+            type: string
+            example: "300"
+
+      responses:
+        '200':
+          description: Successful download
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="Bohemian Rhapsody.mp3"'
+
+        '401':
+          $ref: '#/paths/~1stream/get/responses/401'
+        '404':
+          $ref: '#/paths/~1stream/get/responses/404'
+        '500':
+          $ref: '#/paths/~1stream/get/responses/500'
+
+components:
+  parameters:
+    Username:
+      name: u
+      in: query
+      required: true
+      schema:
+        type: string
+    Token:
+      name: t
+      in: query
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{32}$'
+    Salt:
+      name: s
+      in: query
+      required: true
+      schema:
+        type: string
+    Version:
+      name: v
+      in: query
+      required: true
+      schema:
+        type: string
+        default: "1.16.1"
+    Client:
+      name: c
+      in: query
+      required: true
+      schema:
+        type: string
+        default: playlistgen
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+            version:
+              type: string
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                  enum: [0, 10, 20, 30, 40, 50, 60, 70]
+                message:
+                  type: string
+
+security:
+  - SubsonicAuth: []
+
+# Usage Examples
+# 1. Stream track 300 as-is:
+#    GET /rest/stream?id=300&u=admin&t=xxx&s=yyy&v=1.16.1&c=playlistgen
+#
+# 2. Stream track 300 transcoded to MP3 at 192kbps:
+#    GET /rest/stream?id=300&maxBitRate=192&format=mp3&u=admin&t=xxx&s=yyy&v=1.16.1&c=playlistgen
+#
+# 3. Download track 300 (original format):
+#    GET /rest/download?id=300&u=admin&t=xxx&s=yyy&v=1.16.1&c=playlistgen

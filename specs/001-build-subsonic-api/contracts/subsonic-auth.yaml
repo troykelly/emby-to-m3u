@@ -1,0 +1,213 @@
+openapi: 3.0.3
+info:
+  title: Subsonic Authentication API Contract
+  description: Contract specification for Subsonic API authentication using token-based method
+  version: 1.16.1
+  contact:
+    name: Subsonic API Documentation
+    url: http://www.subsonic.org/pages/api.jsp
+
+servers:
+  - url: '{serverUrl}/rest'
+    variables:
+      serverUrl:
+        default: https://music.example.com
+        description: Subsonic server base URL
+
+paths:
+  /ping:
+    get:
+      summary: Test server connectivity and authentication
+      description: |
+        Used to test connectivity to the server. Returns a "ok" status if successful.
+        This endpoint validates authentication credentials.
+      operationId: ping
+      parameters:
+        - name: u
+          in: query
+          required: true
+          description: Username
+          schema:
+            type: string
+            example: admin
+        - name: t
+          in: query
+          required: true
+          description: Authentication token (MD5 hash of password + salt)
+          schema:
+            type: string
+            format: md5
+            pattern: '^[a-f0-9]{32}$'
+            example: 26719a1196d2a940705a59634eb18eab
+        - name: s
+          in: query
+          required: true
+          description: Random salt string used to generate token
+          schema:
+            type: string
+            minLength: 6
+            maxLength: 36
+            example: c19b2d
+        - name: v
+          in: query
+          required: true
+          description: API protocol version
+          schema:
+            type: string
+            default: "1.16.1"
+            example: "1.16.1"
+        - name: c
+          in: query
+          required: true
+          description: Client application name
+          schema:
+            type: string
+            default: playlistgen
+            example: playlistgen
+        - name: f
+          in: query
+          required: false
+          description: Response format (json or xml)
+          schema:
+            type: string
+            enum: [json, xml]
+            default: json
+
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+              examples:
+                success:
+                  summary: Successful authentication
+                  value:
+                    subsonic-response:
+                      status: ok
+                      version: "1.16.1"
+
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                wrongCredentials:
+                  summary: Wrong username or password
+                  value:
+                    subsonic-response:
+                      status: failed
+                      version: "1.16.1"
+                      error:
+                        code: 40
+                        message: "Wrong username or password."
+
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                serverError:
+                  summary: Generic server error
+                  value:
+                    subsonic-response:
+                      status: failed
+                      version: "1.16.1"
+                      error:
+                        code: 0
+                        message: "A generic error."
+
+components:
+  schemas:
+    PingResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+          properties:
+            status:
+              type: string
+              enum: [ok]
+              example: ok
+            version:
+              type: string
+              pattern: '^\d+\.\d+\.\d+$'
+              example: "1.16.1"
+
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+              example: failed
+            version:
+              type: string
+              pattern: '^\d+\.\d+\.\d+$'
+              example: "1.16.1"
+            error:
+              $ref: '#/components/schemas/Error'
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          description: |
+            Error codes:
+            0 = Generic error
+            10 = Required parameter missing
+            20 = Incompatible Subsonic REST API version
+            30 = Incompatible Subsonic REST API client
+            40 = Wrong username or password
+            50 = User not authorized
+            60 = Trial period is over
+            70 = Data not found
+          enum: [0, 10, 20, 30, 40, 50, 60, 70]
+          example: 40
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Wrong username or password."
+
+  securitySchemes:
+    SubsonicAuth:
+      type: apiKey
+      in: query
+      name: Authentication
+      description: |
+        Subsonic uses token-based authentication with MD5 hashing:
+        1. Generate random salt (6-36 character string)
+        2. Compute token = MD5(password + salt)
+        3. Include u (username), t (token), s (salt) in every request
+
+        Example:
+        - password: "sesame"
+        - salt: "c19b2d"
+        - token: MD5("sesamec19b2d") = "26719a1196d2a940705a59634eb18eab"
+        - URL: /rest/ping?u=admin&t=26719a1196d2a940705a59634eb18eab&s=c19b2d&v=1.16.1&c=playlistgen&f=json
+
+security:
+  - SubsonicAuth: []

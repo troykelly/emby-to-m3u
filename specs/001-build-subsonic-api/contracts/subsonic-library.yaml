@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: Subsonic Library API Contract
+  description: Contract specification for fetching music library from Subsonic API
+  version: 1.16.1
+  contact:
+    name: Subsonic API Documentation
+    url: http://www.subsonic.org/pages/api.jsp
+
+servers:
+  - url: '{serverUrl}/rest'
+    variables:
+      serverUrl:
+        default: https://music.example.com
+        description: Subsonic server base URL
+
+paths:
+  /getSongs:
+    get:
+      summary: Get all songs in library
+      description: |
+        Returns all songs in the music library. Supports pagination for large libraries.
+        Maximum 500 songs per request (Subsonic API limit).
+      operationId: getSongs
+      parameters:
+        - $ref: '#/components/parameters/Username'
+        - $ref: '#/components/parameters/Token'
+        - $ref: '#/components/parameters/Salt'
+        - $ref: '#/components/parameters/Version'
+        - $ref: '#/components/parameters/Client'
+        - $ref: '#/components/parameters/Format'
+        - name: musicFolderId
+          in: query
+          required: false
+          description: If specified, only return songs in this music folder
+          schema:
+            type: string
+            example: "1"
+        - name: offset
+          in: query
+          required: false
+          description: Offset for pagination (0-based index)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+            example: 0
+        - name: size
+          in: query
+          required: false
+          description: Maximum number of songs to return (max 500)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 500
+            example: 500
+
+      responses:
+        '200':
+          description: Successful retrieval of songs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetSongsResponse'
+              examples:
+                success:
+                  $ref: '#/components/examples/GetSongsSuccess'
+
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    Username:
+      name: u
+      in: query
+      required: true
+      schema:
+        type: string
+    Token:
+      name: t
+      in: query
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{32}$'
+    Salt:
+      name: s
+      in: query
+      required: true
+      schema:
+        type: string
+    Version:
+      name: v
+      in: query
+      required: true
+      schema:
+        type: string
+        default: "1.16.1"
+    Client:
+      name: c
+      in: query
+      required: true
+      schema:
+        type: string
+        default: playlistgen
+    Format:
+      name: f
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [json, xml]
+        default: json
+
+  schemas:
+    GetSongsResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - songs
+          properties:
+            status:
+              type: string
+              enum: [ok]
+            version:
+              type: string
+            songs:
+              type: object
+              required:
+                - song
+              properties:
+                song:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Song'
+
+    Song:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - album
+        - duration
+        - path
+        - suffix
+        - created
+      properties:
+        id:
+          type: string
+          description: Unique song identifier
+          example: "300"
+        title:
+          type: string
+          description: Song title
+          example: "Bohemian Rhapsody"
+        artist:
+          type: string
+          description: Artist name
+          example: "Queen"
+        album:
+          type: string
+          description: Album name
+          example: "A Night at the Opera"
+        genre:
+          type: string
+          description: Genre (optional)
+          example: "Rock"
+        track:
+          type: integer
+          description: Track number on album (optional)
+          example: 11
+        discNumber:
+          type: integer
+          description: Disc number (optional)
+          example: 1
+        year:
+          type: integer
+          description: Release year (optional)
+          example: 1975
+        duration:
+          type: integer
+          description: Duration in seconds
+          example: 354
+        musicBrainzId:
+          type: string
+          description: MusicBrainz track ID (optional)
+          example: "b1a9c0e9-d987-4042-ae91-78d6a3267d69"
+        path:
+          type: string
+          description: File path on server
+          example: "Queen/A Night at the Opera/11 Bohemian Rhapsody.mp3"
+        suffix:
+          type: string
+          description: File extension
+          example: "mp3"
+        created:
+          type: string
+          format: date-time
+          description: Creation timestamp (ISO 8601)
+          example: "2024-01-15T10:30:00.000Z"
+        coverArt:
+          type: string
+          description: Cover art ID (optional)
+          example: "al-300"
+        size:
+          type: integer
+          description: File size in bytes (optional)
+          example: 8503491
+        bitRate:
+          type: integer
+          description: Bitrate in kbps (optional)
+          example: 320
+        contentType:
+          type: string
+          description: MIME type (optional)
+          example: "audio/mpeg"
+
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+            version:
+              type: string
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                message:
+                  type: string
+
+  examples:
+    GetSongsSuccess:
+      summary: Successful retrieval of songs (2 tracks)
+      value:
+        subsonic-response:
+          status: ok
+          version: "1.16.1"
+          songs:
+            song:
+              - id: "300"
+                title: "Bohemian Rhapsody"
+                artist: "Queen"
+                album: "A Night at the Opera"
+                genre: "Rock"
+                track: 11
+                discNumber: 1
+                year: 1975
+                duration: 354
+                musicBrainzId: "b1a9c0e9-d987-4042-ae91-78d6a3267d69"
+                path: "Queen/A Night at the Opera/11 Bohemian Rhapsody.mp3"
+                suffix: "mp3"
+                created: "2024-01-15T10:30:00.000Z"
+                coverArt: "al-300"
+                size: 8503491
+                bitRate: 320
+                contentType: "audio/mpeg"
+              - id: "301"
+                title: "We Will Rock You"
+                artist: "Queen"
+                album: "News of the World"
+                genre: "Rock"
+                track: 1
+                year: 1977
+                duration: 122
+                path: "Queen/News of the World/01 We Will Rock You.flac"
+                suffix: "flac"
+                created: "2024-01-15T11:00:00.000Z"
+                size: 15234567
+                bitRate: 1411
+                contentType: "audio/flac"
+
+security:
+  - SubsonicAuth: []

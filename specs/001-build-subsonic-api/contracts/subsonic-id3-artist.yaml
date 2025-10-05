@@ -1,0 +1,300 @@
+openapi: 3.0.3
+info:
+  title: Subsonic API - ID3 Artist Endpoint
+  version: 1.16.1
+  description: |
+    Contract specification for Subsonic getArtist endpoint.
+    Returns detailed artist information including all albums.
+    Part of ID3 browsing workflow: getArtists → getArtist → getAlbum
+
+servers:
+  - url: https://music.example.com/rest
+    description: Subsonic API server
+
+paths:
+  /getArtist:
+    get:
+      summary: Get artist details (ID3)
+      description: |
+        Returns detailed information about a specific artist including all albums.
+        This is the second step in ID3-based library browsing.
+      operationId: getArtist
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Artist ID from getArtists response
+          schema:
+            type: string
+            example: "ar-100"
+        - name: u
+          in: query
+          required: true
+          description: Username for authentication
+          schema:
+            type: string
+        - name: t
+          in: query
+          required: true
+          description: Authentication token (MD5 hash)
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+        - name: s
+          in: query
+          required: true
+          description: Salt used for token generation
+          schema:
+            type: string
+            minLength: 6
+        - name: v
+          in: query
+          required: true
+          description: API version
+          schema:
+            type: string
+            example: "1.16.1"
+        - name: c
+          in: query
+          required: true
+          description: Client application name
+          schema:
+            type: string
+            example: "playlistgen"
+        - name: f
+          in: query
+          required: true
+          description: Response format
+          schema:
+            type: string
+            enum: [json, xml]
+            default: json
+      responses:
+        '200':
+          description: Artist details with albums
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtistResponse'
+              example:
+                subsonic-response:
+                  status: ok
+                  version: "1.16.1"
+                  artist:
+                    id: "ar-100"
+                    name: "Queen"
+                    albumCount: 12
+                    coverArt: "ar-100"
+                    artistImageUrl: "https://example.com/queen.jpg"
+                    album:
+                      - id: "al-200"
+                        name: "A Night at the Opera"
+                        artist: "Queen"
+                        artistId: "ar-100"
+                        coverArt: "al-200"
+                        songCount: 12
+                        duration: 2561
+                        created: "2024-01-15T10:30:00.000Z"
+                        year: 1975
+                        genre: "Rock"
+                      - id: "al-201"
+                        name: "News of the World"
+                        artist: "Queen"
+                        artistId: "ar-100"
+                        coverArt: "al-201"
+                        songCount: 11
+                        duration: 2401
+                        created: "2024-01-15T11:00:00.000Z"
+                        year: 1977
+                        genre: "Rock"
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ArtistResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - artist
+          properties:
+            status:
+              type: string
+              enum: [ok]
+            version:
+              type: string
+              example: "1.16.1"
+            artist:
+              $ref: '#/components/schemas/ArtistDetail'
+
+    ArtistDetail:
+      type: object
+      required:
+        - id
+        - name
+        - albumCount
+        - album
+      properties:
+        id:
+          type: string
+          description: Unique artist identifier
+          example: "ar-100"
+        name:
+          type: string
+          description: Artist name
+          example: "Queen"
+        albumCount:
+          type: integer
+          description: Number of albums by this artist
+          minimum: 0
+          example: 12
+        coverArt:
+          type: string
+          description: Cover art identifier (optional)
+          example: "ar-100"
+        artistImageUrl:
+          type: string
+          format: uri
+          description: URL to artist image (optional)
+          example: "https://example.com/queen.jpg"
+        starred:
+          type: string
+          format: date-time
+          description: Timestamp when artist was starred (optional)
+        userRating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: User rating (1-5 stars, optional)
+        album:
+          type: array
+          description: Albums by this artist
+          items:
+            $ref: '#/components/schemas/Album'
+
+    Album:
+      type: object
+      required:
+        - id
+        - name
+        - artist
+        - artistId
+        - songCount
+        - duration
+        - created
+      properties:
+        id:
+          type: string
+          description: Unique album identifier
+          example: "al-200"
+        name:
+          type: string
+          description: Album title
+          example: "A Night at the Opera"
+        artist:
+          type: string
+          description: Artist name
+          example: "Queen"
+        artistId:
+          type: string
+          description: Artist ID reference
+          example: "ar-100"
+        coverArt:
+          type: string
+          description: Cover art identifier (optional)
+          example: "al-200"
+        songCount:
+          type: integer
+          description: Number of songs in album
+          minimum: 0
+          example: 12
+        duration:
+          type: integer
+          description: Total duration in seconds
+          minimum: 0
+          example: 2561
+        created:
+          type: string
+          format: date-time
+          description: Timestamp when album was added to library
+          example: "2024-01-15T10:30:00.000Z"
+        year:
+          type: integer
+          description: Release year (optional)
+          minimum: 1000
+          maximum: 9999
+          example: 1975
+        genre:
+          type: string
+          description: Music genre (optional)
+          example: "Rock"
+        starred:
+          type: string
+          format: date-time
+          description: Timestamp when album was starred (optional)
+        userRating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: User rating (1-5 stars, optional)
+
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+            version:
+              type: string
+              example: "1.16.1"
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                  description: |
+                    Error codes:
+                    - 40: Wrong username or password
+                    - 70: Artist not found
+                  enum: [40, 70]
+                message:
+                  type: string
+                  example: "Artist not found."
+
+  securitySchemes:
+    SubsonicAuth:
+      type: apiKey
+      in: query
+      name: t
+      description: Token-based authentication using MD5(password + salt)
+
+security:
+  - SubsonicAuth: []

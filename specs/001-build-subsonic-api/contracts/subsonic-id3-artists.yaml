@@ -1,0 +1,239 @@
+openapi: 3.0.3
+info:
+  title: Subsonic API - ID3 Artists Endpoint
+  version: 1.16.1
+  description: |
+    Contract specification for Subsonic getArtists endpoint.
+    Returns all artists organized alphabetically in index groups.
+    Part of ID3 browsing workflow: getArtists → getArtist → getAlbum
+
+servers:
+  - url: https://music.example.com/rest
+    description: Subsonic API server
+
+paths:
+  /getArtists:
+    get:
+      summary: Get all artists (ID3)
+      description: |
+        Returns all artists organized alphabetically in index groups.
+        This is the entry point for ID3-based library browsing.
+        Compatible with all Subsonic servers including Navidrome.
+      operationId: getArtists
+      parameters:
+        - name: u
+          in: query
+          required: true
+          description: Username for authentication
+          schema:
+            type: string
+        - name: t
+          in: query
+          required: true
+          description: Authentication token (MD5 hash)
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+        - name: s
+          in: query
+          required: true
+          description: Salt used for token generation
+          schema:
+            type: string
+            minLength: 6
+        - name: v
+          in: query
+          required: true
+          description: API version
+          schema:
+            type: string
+            example: "1.16.1"
+        - name: c
+          in: query
+          required: true
+          description: Client application name
+          schema:
+            type: string
+            example: "playlistgen"
+        - name: f
+          in: query
+          required: true
+          description: Response format
+          schema:
+            type: string
+            enum: [json, xml]
+            default: json
+      responses:
+        '200':
+          description: Artists organized alphabetically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtistsResponse'
+              example:
+                subsonic-response:
+                  status: ok
+                  version: "1.16.1"
+                  artists:
+                    ignoredArticles: "The El La Los Las Le Les"
+                    index:
+                      - name: A
+                        artist:
+                          - id: "ar-1"
+                            name: "ABBA"
+                            albumCount: 8
+                            coverArt: "ar-1"
+                          - id: "ar-2"
+                            name: "AC/DC"
+                            albumCount: 15
+                            coverArt: "ar-2"
+                      - name: Q
+                        artist:
+                          - id: "ar-100"
+                            name: "Queen"
+                            albumCount: 12
+                            coverArt: "ar-100"
+                            artistImageUrl: "https://example.com/queen.jpg"
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ArtistsResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - artists
+          properties:
+            status:
+              type: string
+              enum: [ok]
+            version:
+              type: string
+              example: "1.16.1"
+            artists:
+              $ref: '#/components/schemas/Artists'
+
+    Artists:
+      type: object
+      required:
+        - index
+      properties:
+        ignoredArticles:
+          type: string
+          description: Space-separated list of articles ignored for sorting (e.g., "The", "El", "La")
+          example: "The El La Los Las Le Les"
+        index:
+          type: array
+          description: Alphabetical index groupings
+          items:
+            $ref: '#/components/schemas/Index'
+
+    Index:
+      type: object
+      required:
+        - name
+        - artist
+      properties:
+        name:
+          type: string
+          description: Index letter or symbol
+          example: "A"
+        artist:
+          type: array
+          description: Artists in this index
+          items:
+            $ref: '#/components/schemas/Artist'
+
+    Artist:
+      type: object
+      required:
+        - id
+        - name
+        - albumCount
+      properties:
+        id:
+          type: string
+          description: Unique artist identifier
+          example: "ar-100"
+        name:
+          type: string
+          description: Artist name
+          example: "Queen"
+        albumCount:
+          type: integer
+          description: Number of albums by this artist
+          minimum: 0
+          example: 12
+        coverArt:
+          type: string
+          description: Cover art identifier (optional)
+          example: "ar-100"
+        artistImageUrl:
+          type: string
+          format: uri
+          description: URL to artist image (optional)
+          example: "https://example.com/queen.jpg"
+        starred:
+          type: string
+          format: date-time
+          description: Timestamp when artist was starred (optional)
+        userRating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: User rating (1-5 stars, optional)
+
+    ErrorResponse:
+      type: object
+      required:
+        - subsonic-response
+      properties:
+        subsonic-response:
+          type: object
+          required:
+            - status
+            - version
+            - error
+          properties:
+            status:
+              type: string
+              enum: [failed]
+            version:
+              type: string
+              example: "1.16.1"
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                  description: |
+                    Error codes:
+                    - 40: Wrong username or password
+                  enum: [40]
+                message:
+                  type: string
+                  example: "Wrong username or password."
+
+  securitySchemes:
+    SubsonicAuth:
+      type: apiKey
+      in: query
+      name: t
+      description: Token-based authentication using MD5(password + salt)
+
+security:
+  - SubsonicAuth: []
