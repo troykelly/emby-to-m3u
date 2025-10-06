@@ -1,0 +1,135 @@
+[project]
+name = "emby-to-m3u"
+version = "0.1.0"
+description = "Emby to M3U playlist generator with AI-powered playlist creation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Emby to M3U Project"}
+]
+keywords = ["emby", "m3u", "playlist", "ai", "music"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.pylint.main]
+# Target score: 9.0+
+fail-under = 9.0
+jobs = 0
+load-plugins = []
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.messages_control]
+# Disable specific checks that conflict with Black or are too strict initially
+disable = [
+    "C0114",  # missing-module-docstring (we'll add progressively)
+    "R0903",  # too-few-public-methods (common in data classes)
+]
+
+[tool.pylint.design]
+max-args = 7
+max-attributes = 10
+max-locals = 20
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_unimported = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+check_untyped_defs = true
+strict_equality = true
+show_error_codes = true
+
+# Strict type checking for AI playlist module
+[[tool.mypy.overrides]]
+module = "src.ai_playlist.*"
+disallow_untyped_defs = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+
+# Third-party libraries without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "mutagen.*",
+    "pydub.*",
+    "pylast.*",
+    "croniter.*",
+    "pdfkit.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=src",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+    "--cov-fail-under=90",
+    "-v"
+]
+markers = [
+    "asyncio: marks tests as async",
+    "unit: marks tests as unit tests",
+    "integration: marks tests as integration tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 90
+
+[tool.coverage.html]
+directory = "htmlcov"

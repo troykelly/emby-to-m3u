@@ -1,0 +1,613 @@
+"""
+AI Playlist Data Models - Phase 1 Implementation
+
+Core entities for LLM-driven playlist automation with constraint-based track selection.
+Implements all 10 dataclasses from data-model.md specification.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+import uuid
+import json
+import re
+
+
+@dataclass
+class ProgrammingDocument:
+    """Represents parsed plain-language radio programming strategy."""
+
+    content: str
+    dayparts: List["DaypartSpec"]
+    metadata: Dict[str, str]
+
+    def __post_init__(self) -> None:
+        """Validate programming document constraints."""
+        if not self.content or not self.content.strip():
+            raise ValueError("Content must not be empty")
+
+        if not self.dayparts or len(self.dayparts) == 0:
+            raise ValueError("Must contain at least one valid daypart")
+
+        # Validate no overlapping time ranges
+        time_ranges = []
+        for daypart in self.dayparts:
+            if daypart.day not in [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]:
+                raise ValueError(f"Invalid day: {daypart.day}")
+            time_ranges.append((daypart.day, daypart.time_range))
+
+        # Check for overlaps on same day
+        for i, (day1, (start1, end1)) in enumerate(time_ranges):
+            for day2, (start2, end2) in time_ranges[i + 1 :]:
+                if day1 == day2:
+                    if not (end1 <= start2 or end2 <= start1):
+                        raise ValueError(
+                            f"Overlapping time ranges on {day1}: {start1}-{end1} and {start2}-{end2}"
+                        )
+
+
+@dataclass
+class DaypartSpec:
+    """Structured specification for a radio programming time block."""
+
+    name: str
+    day: str
+    time_range: Tuple[str, str]
+    bpm_progression: Dict[str, Tuple[int, int]]
+    genre_mix: Dict[str, float]
+    era_distribution: Dict[str, float]
+    australian_min: float
+    mood: str
+    tracks_per_hour: int
+
+    def __post_init__(self) -> None:
+        """Validate daypart specification constraints."""
+        # Name validation
+        if not self.name or len(self.name) > 100:
+            raise ValueError("Name must be non-empty and max 100 chars")
+
+        # Day validation
+        valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        if self.day not in valid_days:
+            raise ValueError(f"Day must be one of {valid_days}")
+
+        # Time range validation (24-hour format HH:MM)
+        time_pattern = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+        start, end = self.time_range
+        if not time_pattern.match(start) or not time_pattern.match(end):
+            raise ValueError("Time range must be in HH:MM 24-hour format")
+        if start >= end:
+            raise ValueError("Start time must be before end time")
+
+        # BPM progression validation
+        for time_slot, (bpm_min, bpm_max) in self.bpm_progression.items():
+            if bpm_min <= 0 or bpm_max <= 0:
+                raise ValueError("BPM values must be > 0")
+            if bpm_min > bpm_max:
+                raise ValueError(f"Invalid BPM range: {bpm_min}-{bpm_max}")
+
+        # Genre mix validation
+        if sum(self.genre_mix.values()) > 1.0:
+            raise ValueError("Genre mix percentages must sum to ≤ 1.0")
+        for genre, pct in self.genre_mix.items():
+            if not 0.0 <= pct <= 1.0:
+                raise ValueError(f"Genre {genre} percentage must be 0.0-1.0")
+
+        # Era distribution validation
+        if sum(self.era_distribution.values()) > 1.0:
+            raise ValueError("Era distribution percentages must sum to ≤ 1.0")
+        for era, pct in self.era_distribution.items():
+            if not 0.0 <= pct <= 1.0:
+                raise ValueError(f"Era {era} percentage must be 0.0-1.0")
+
+        # Australian minimum validation
+        if not 0.0 <= self.australian_min <= 1.0:
+            raise ValueError("Australian minimum must be 0.0-1.0")
+
+        # Mood validation
+        if not self.mood or len(self.mood) > 200:
+            raise ValueError("Mood must be non-empty and max 200 chars")
+
+        # Tracks per hour validation
+        if self.tracks_per_hour <= 0:
+            raise ValueError("Tracks per hour must be > 0")
+
+
+@dataclass
+class PlaylistSpec:
+    """Generated playlist specification ready for track selection."""
+
+    id: str
+    name: str
+    daypart: DaypartSpec
+    target_duration_minutes: int
+    track_criteria: "TrackSelectionCriteria"
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self) -> None:
+        """Validate playlist specification constraints."""
+        # ID validation (UUID4)
+        try:
+            uuid.UUID(self.id, version=4)
+        except ValueError:
+            raise ValueError("ID must be valid UUID4")
+
+        # Name validation (schema: {Day}_{ShowName}_{StartTime}_{EndTime})
+        name_pattern = re.compile(
+            r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)_"
+            r"[A-Za-z0-9]+_\d{4}_\d{4}$"
+        )
+        if not name_pattern.match(self.name):
+            raise ValueError("Name must match schema: {Day}_{ShowName}_{StartTime}_{EndTime}")
+
+        # Duration validation
+        if self.target_duration_minutes <= 0:
+            raise ValueError("Target duration must be > 0")
+
+        # Created at validation
+        if self.created_at > datetime.now():
+            raise ValueError("Created at cannot be in future")
+
+
+@dataclass
+class TrackSelectionCriteria:
+    """Multi-dimensional constraint set for LLM track selection."""
+
+    bpm_range: Tuple[int, int]
+    bpm_tolerance: int = 10
+    genre_mix: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    genre_tolerance: float = 0.05
+    era_distribution: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    era_tolerance: float = 0.05
+    australian_min: float = 0.30
+    energy_flow: str = ""
+    excluded_track_ids: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate track selection criteria constraints."""
+        # BPM range validation
+        bpm_min, bpm_max = self.bpm_range
+        if bpm_min <= 0 or bpm_max <= 0:
+            raise ValueError("BPM range values must be > 0")
+        if bpm_min >= bpm_max:
+            raise ValueError("BPM min must be < BPM max")
+        if bpm_max > 300:
+            raise ValueError("BPM values must be ≤ 300")
+
+        # BPM tolerance validation
+        if self.bpm_tolerance <= 0 or self.bpm_tolerance > 50:
+            raise ValueError("BPM tolerance must be > 0 and ≤ 50")
+
+        # Genre mix validation
+        min_sum = sum(min_pct for min_pct, _ in self.genre_mix.values())
+        if min_sum > 1.0:
+            raise ValueError("Genre mix minimum percentages must sum to ≤ 1.0")
+        for genre, (min_pct, max_pct) in self.genre_mix.items():
+            if min_pct > max_pct:
+                raise ValueError(f"Genre {genre}: min must be ≤ max")
+
+        # Genre tolerance validation
+        if not 0.0 <= self.genre_tolerance <= 0.20:
+            raise ValueError("Genre tolerance must be 0.0-0.20")
+
+        # Era distribution validation
+        min_sum = sum(min_pct for min_pct, _ in self.era_distribution.values())
+        if min_sum > 1.0:
+            raise ValueError("Era distribution minimum percentages must sum to ≤ 1.0")
+        for era, (min_pct, max_pct) in self.era_distribution.items():
+            if min_pct > max_pct:
+                raise ValueError(f"Era {era}: min must be ≤ max")
+
+        # Era tolerance validation
+        if not 0.0 <= self.era_tolerance <= 0.20:
+            raise ValueError("Era tolerance must be 0.0-0.20")
+
+        # Australian minimum validation
+        if not 0.0 <= self.australian_min <= 1.0:
+            raise ValueError("Australian minimum must be 0.0-1.0")
+
+        # Energy flow validation
+        if not self.energy_flow or len(self.energy_flow) > 500:
+            raise ValueError("Energy flow must be non-empty and max 500 chars")
+
+    def relax_bpm(self, increment: int = 10) -> "TrackSelectionCriteria":
+        """Create relaxed criteria with expanded BPM range."""
+        bpm_min, bpm_max = self.bpm_range
+        return TrackSelectionCriteria(
+            bpm_range=(max(0, bpm_min - increment), min(300, bpm_max + increment)),
+            bpm_tolerance=self.bpm_tolerance,
+            genre_mix=self.genre_mix.copy(),
+            genre_tolerance=self.genre_tolerance,
+            era_distribution=self.era_distribution.copy(),
+            era_tolerance=self.era_tolerance,
+            australian_min=self.australian_min,
+            energy_flow=self.energy_flow,
+            excluded_track_ids=self.excluded_track_ids.copy(),
+        )
+
+    def relax_genre(self, tolerance: float = 0.05) -> "TrackSelectionCriteria":
+        """Create relaxed criteria with expanded genre tolerance."""
+        relaxed_genre_mix = {
+            genre: (max(0.0, min_pct - tolerance), min(1.0, max_pct + tolerance))
+            for genre, (min_pct, max_pct) in self.genre_mix.items()
+        }
+        return TrackSelectionCriteria(
+            bpm_range=self.bpm_range,
+            bpm_tolerance=self.bpm_tolerance,
+            genre_mix=relaxed_genre_mix,
+            genre_tolerance=min(0.20, self.genre_tolerance + tolerance),
+            era_distribution=self.era_distribution.copy(),
+            era_tolerance=self.era_tolerance,
+            australian_min=self.australian_min,
+            energy_flow=self.energy_flow,
+            excluded_track_ids=self.excluded_track_ids.copy(),
+        )
+
+    def relax_era(self, tolerance: float = 0.05) -> "TrackSelectionCriteria":
+        """Create relaxed criteria with expanded era tolerance."""
+        relaxed_era_dist = {
+            era: (max(0.0, min_pct - tolerance), min(1.0, max_pct + tolerance))
+            for era, (min_pct, max_pct) in self.era_distribution.items()
+        }
+        return TrackSelectionCriteria(
+            bpm_range=self.bpm_range,
+            bpm_tolerance=self.bpm_tolerance,
+            genre_mix=self.genre_mix.copy(),
+            genre_tolerance=self.genre_tolerance,
+            era_distribution=relaxed_era_dist,
+            era_tolerance=min(0.20, self.era_tolerance + tolerance),
+            australian_min=self.australian_min,
+            energy_flow=self.energy_flow,
+            excluded_track_ids=self.excluded_track_ids.copy(),
+        )
+
+
+@dataclass
+class LLMTrackSelectionRequest:
+    """Request payload for OpenAI LLM track selection via MCP."""
+
+    playlist_id: str
+    criteria: TrackSelectionCriteria
+    target_track_count: int
+    mcp_tools: List[str] = field(
+        default_factory=lambda: [
+            "search_tracks",
+            "get_genres",
+            "search_similar",
+            "analyze_library",
+        ]
+    )
+    prompt_template: str = ""
+    max_cost_usd: float = 0.01
+    timeout_seconds: int = 30
+
+    def __post_init__(self) -> None:
+        """Validate LLM track selection request constraints."""
+        # Playlist ID validation
+        try:
+            uuid.UUID(self.playlist_id, version=4)
+        except ValueError:
+            raise ValueError("Playlist ID must be valid UUID4")
+
+        # Target track count validation
+        if not 0 < self.target_track_count <= 1000:
+            raise ValueError("Target track count must be > 0 and ≤ 1000")
+
+        # MCP tools validation
+        if not self.mcp_tools:
+            raise ValueError("MCP tools must be non-empty")
+
+        # Prompt template validation (optional - can be auto-generated)
+        # No validation needed - empty string is valid
+
+        # Cost validation
+        if not 0 < self.max_cost_usd <= 0.50:
+            raise ValueError("Max cost must be > 0 and ≤ 0.50")
+
+        # Timeout validation
+        if not 0 < self.timeout_seconds <= 300:
+            raise ValueError("Timeout must be > 0 and ≤ 300")
+
+
+@dataclass
+class SelectedTrack:
+    """Track selected by LLM with metadata for validation."""
+
+    track_id: str
+    title: str
+    artist: str
+    album: str
+    bpm: Optional[int]
+    genre: Optional[str]
+    year: Optional[int]
+    country: Optional[str]
+    duration_seconds: int
+    position: int
+    selection_reason: str
+
+    def __post_init__(self) -> None:
+        """Validate selected track constraints."""
+        # ID validation
+        if not self.track_id:
+            raise ValueError("Track ID must be non-empty")
+
+        # Text field validation
+        for field_name, field_value in [
+            ("title", self.title),
+            ("artist", self.artist),
+            ("album", self.album),
+        ]:
+            if not field_value or len(field_value) > 200:
+                raise ValueError(f"{field_name} must be non-empty and max 200 chars")
+
+        # BPM validation
+        if self.bpm is not None and (self.bpm <= 0 or self.bpm > 300):
+            raise ValueError("BPM must be > 0 and ≤ 300")
+
+        # Genre validation
+        if self.genre is not None and (not self.genre or len(self.genre) > 50):
+            raise ValueError("Genre must be non-empty and max 50 chars")
+
+        # Year validation
+        current_year = datetime.now().year
+        if self.year is not None and not (1900 <= self.year <= current_year + 1):
+            raise ValueError(f"Year must be 1900-{current_year + 1}")
+
+        # Duration validation
+        if self.duration_seconds <= 0:
+            raise ValueError("Duration must be > 0")
+
+        # Position validation
+        if self.position <= 0:
+            raise ValueError("Position must be > 0")
+
+        # Selection reason validation
+        if not self.selection_reason or len(self.selection_reason) > 500:
+            raise ValueError("Selection reason must be non-empty and max 500 chars")
+
+
+@dataclass
+class LLMTrackSelectionResponse:
+    """Response from OpenAI LLM with selected tracks and metadata."""
+
+    request_id: str
+    selected_tracks: List[SelectedTrack]
+    tool_calls: List[Dict[str, str]]
+    reasoning: str
+    cost_usd: float
+    execution_time_seconds: float
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self) -> None:
+        """Validate LLM track selection response constraints."""
+        # Request ID validation
+        try:
+            uuid.UUID(self.request_id, version=4)
+        except ValueError:
+            raise ValueError("Request ID must be valid UUID4")
+
+        # Selected tracks validation
+        if not self.selected_tracks:
+            raise ValueError("Selected tracks must be non-empty")
+
+        # Tool calls validation
+        for tool_call in self.tool_calls:
+            if not all(key in tool_call for key in ["tool_name", "arguments", "result"]):
+                raise ValueError("Tool call must have tool_name, arguments, result")
+
+        # Reasoning validation
+        if not self.reasoning or len(self.reasoning) > 2000:
+            raise ValueError("Reasoning must be non-empty and max 2000 chars")
+
+        # Cost validation
+        if self.cost_usd < 0:
+            raise ValueError("Cost must be ≥ 0")
+
+        # Execution time validation
+        if self.execution_time_seconds < 0:
+            raise ValueError("Execution time must be ≥ 0")
+
+        # Created at validation
+        if self.created_at > datetime.now():
+            raise ValueError("Created at cannot be in future")
+
+
+@dataclass
+class ValidationResult:
+    """Quality assessment of generated playlist."""
+
+    constraint_satisfaction: float
+    bpm_satisfaction: float
+    genre_satisfaction: float
+    era_satisfaction: float
+    australian_content: float
+    flow_quality_score: float
+    bpm_variance: float
+    energy_progression: str
+    genre_diversity: float
+    gap_analysis: Dict[str, str]
+    passes_validation: bool
+
+    def __post_init__(self) -> None:
+        """Validate validation result constraints."""
+        # Float field validation (0.0-1.0)
+        for field_name, field_value in [
+            ("constraint_satisfaction", self.constraint_satisfaction),
+            ("bpm_satisfaction", self.bpm_satisfaction),
+            ("genre_satisfaction", self.genre_satisfaction),
+            ("era_satisfaction", self.era_satisfaction),
+            ("australian_content", self.australian_content),
+            ("flow_quality_score", self.flow_quality_score),
+            ("genre_diversity", self.genre_diversity),
+        ]:
+            if not 0.0 <= field_value <= 1.0:
+                raise ValueError(f"{field_name} must be 0.0-1.0")
+
+        # BPM variance validation (can be > 1.0)
+        if self.bpm_variance < 0:
+            raise ValueError("BPM variance must be ≥ 0")
+
+        # Energy progression validation
+        valid_progressions = ["smooth", "choppy", "monotone"]
+        if self.energy_progression not in valid_progressions:
+            raise ValueError(f"Energy progression must be one of {valid_progressions}")
+
+        # Gap analysis validation
+        if not isinstance(self.gap_analysis, dict):
+            raise ValueError("Gap analysis must be a dict")
+
+        # Passes validation consistency
+        expected = self.constraint_satisfaction >= 0.80 and self.flow_quality_score >= 0.70
+        if self.passes_validation != expected:
+            raise ValueError(
+                f"passes_validation ({self.passes_validation}) inconsistent with "
+                f"thresholds (constraint: {self.constraint_satisfaction}, "
+                f"flow: {self.flow_quality_score})"
+            )
+
+    def is_valid(self) -> bool:
+        """Check if validation passed."""
+        return self.passes_validation
+
+
+@dataclass
+class Playlist:
+    """Final validated playlist ready for AzuraCast sync."""
+
+    id: str
+    name: str
+    tracks: List[SelectedTrack]
+    spec: PlaylistSpec
+    validation_result: ValidationResult
+    created_at: datetime = field(default_factory=datetime.now)
+    synced_at: Optional[datetime] = None
+    azuracast_id: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        """Validate playlist constraints."""
+        # ID validation
+        try:
+            uuid.UUID(self.id, version=4)
+        except ValueError:
+            raise ValueError("ID must be valid UUID4")
+
+        # ID consistency with spec
+        if self.id != self.spec.id:
+            raise ValueError("Playlist ID must match PlaylistSpec ID")
+
+        # Name validation (schema: {Day}_{ShowName}_{StartTime}_{EndTime})
+        name_pattern = re.compile(
+            r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)_"
+            r"[A-Za-z0-9]+_\d{4}_\d{4}$"
+        )
+        if not name_pattern.match(self.name):
+            raise ValueError("Name must match schema: {Day}_{ShowName}_{StartTime}_{EndTime}")
+
+        # Tracks validation
+        if not self.tracks:
+            raise ValueError("Tracks must be non-empty")
+
+        # Validation result must pass
+        if not self.validation_result.is_valid():
+            raise ValueError(
+                f"ValidationResult must pass (constraint: "
+                f"{self.validation_result.constraint_satisfaction}, "
+                f"flow: {self.validation_result.flow_quality_score})"
+            )
+
+        # Created at validation
+        if self.created_at > datetime.now():
+            raise ValueError("Created at cannot be in future")
+
+        # Synced at validation
+        if self.synced_at is not None and self.synced_at < self.created_at:
+            raise ValueError("Synced at must be ≥ created at")
+
+        # AzuraCast ID validation
+        if self.azuracast_id is not None and self.azuracast_id <= 0:
+            raise ValueError("AzuraCast ID must be > 0")
+
+
+@dataclass
+class DecisionLog:
+    """Audit trail for playlist generation decisions (indefinite retention)."""
+
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: datetime = field(default_factory=datetime.now)
+    decision_type: str = ""
+    playlist_id: str = ""
+    playlist_name: str = ""
+    criteria: Dict[str, str] = field(default_factory=dict)
+    selected_tracks: List[Dict[str, str]] = field(default_factory=list)
+    validation_result: Dict[str, str] = field(default_factory=dict)
+    metadata: Dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate decision log constraints."""
+        # ID validation
+        try:
+            uuid.UUID(self.id, version=4)
+        except ValueError:
+            raise ValueError("ID must be valid UUID4")
+
+        # Timestamp validation
+        if self.timestamp > datetime.now():
+            raise ValueError("Timestamp cannot be in future")
+
+        # Decision type validation
+        valid_types = ["track_selection", "constraint_relaxation", "validation", "sync"]
+        if self.decision_type not in valid_types:
+            raise ValueError(f"Decision type must be one of {valid_types}")
+
+        # Playlist ID validation
+        try:
+            uuid.UUID(self.playlist_id, version=4)
+        except ValueError:
+            raise ValueError("Playlist ID must be valid UUID4")
+
+        # Playlist name validation
+        if not self.playlist_name:
+            raise ValueError("Playlist name must be non-empty")
+
+        # JSON serialization validation
+        for field_name, field_value in [
+            ("criteria", self.criteria),
+            ("selected_tracks", self.selected_tracks),
+            ("validation_result", self.validation_result),
+            ("metadata", self.metadata),
+        ]:
+            try:
+                json.dumps(field_value)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"{field_name} must be JSON-serializable: {e}")
+
+    def to_json(self) -> str:
+        """Serialize decision log to JSON string."""
+        return json.dumps(
+            {
+                "id": self.id,
+                "timestamp": self.timestamp.isoformat(),
+                "decision_type": self.decision_type,
+                "playlist_id": self.playlist_id,
+                "playlist_name": self.playlist_name,
+                "criteria": self.criteria,
+                "selected_tracks": self.selected_tracks,
+                "validation_result": self.validation_result,
+                "metadata": self.metadata,
+            }
+        )
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "DecisionLog":
+        """Deserialize decision log from JSON string."""
+        data = json.loads(json_str)
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+        return cls(**data)

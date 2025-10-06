@@ -1,0 +1,385 @@
+{
+  "tracks": [
+    {
+      "track_id": "AU001",
+      "title": "Midnight Run",
+      "artist": "The Temper Trap",
+      "album": "Trembling Hands",
+      "bpm": 128,
+      "genre": "Alternative",
+      "year": 2024,
+      "country": "AU",
+      "duration_seconds": 243
+    },
+    {
+      "track_id": "AU002",
+      "title": "Electric Dreams",
+      "artist": "Flume",
+      "album": "Things Don't Last",
+      "bpm": 118,
+      "genre": "Electronic",
+      "year": 2023,
+      "country": "AU",
+      "duration_seconds": 198
+    },
+    {
+      "track_id": "AU003",
+      "title": "Golden Days",
+      "artist": "Tame Impala",
+      "album": "Currents Revisited",
+      "bpm": 112,
+      "genre": "Alternative",
+      "year": 2024,
+      "country": "AU",
+      "duration_seconds": 267
+    },
+    {
+      "track_id": "AU004",
+      "title": "Neon Nights",
+      "artist": "Rufus Du Sol",
+      "album": "Surrender",
+      "bpm": 122,
+      "genre": "Electronic",
+      "year": 2023,
+      "country": "AU",
+      "duration_seconds": 312
+    },
+    {
+      "track_id": "AU005",
+      "title": "Wasteland",
+      "artist": "Vance Joy",
+      "album": "In Our Own Sweet Time",
+      "bpm": 95,
+      "genre": "Indie",
+      "year": 2022,
+      "country": "AU",
+      "duration_seconds": 225
+    },
+    {
+      "track_id": "AU006",
+      "title": "Adore You",
+      "artist": "The Jungle Giants",
+      "album": "Love Signs",
+      "bpm": 108,
+      "genre": "Indie",
+      "year": 2021,
+      "country": "AU",
+      "duration_seconds": 189
+    },
+    {
+      "track_id": "US001",
+      "title": "Starlight",
+      "artist": "The Killers",
+      "album": "Pressure Machine Deluxe",
+      "bpm": 135,
+      "genre": "Alternative",
+      "year": 2024,
+      "country": "US",
+      "duration_seconds": 254
+    },
+    {
+      "track_id": "US002",
+      "title": "Hypnotic",
+      "artist": "Zella Day",
+      "album": "Sunday in Heaven",
+      "bpm": 102,
+      "genre": "Quality Pop",
+      "year": 2023,
+      "country": "US",
+      "duration_seconds": 207
+    },
+    {
+      "track_id": "US003",
+      "title": "Cascade",
+      "artist": "ODESZA",
+      "album": "The Last Goodbye",
+      "bpm": 115,
+      "genre": "Electronic",
+      "year": 2022,
+      "country": "US",
+      "duration_seconds": 298
+    },
+    {
+      "track_id": "US004",
+      "title": "Electric Feel 2024",
+      "artist": "MGMT",
+      "album": "Loss of Life",
+      "bpm": 127,
+      "genre": "Alternative",
+      "year": 2024,
+      "country": "US",
+      "duration_seconds": 231
+    },
+    {
+      "track_id": "GB001",
+      "title": "Miracle",
+      "artist": "CHVRCHES",
+      "album": "Screen Violence Deluxe",
+      "bpm": 140,
+      "genre": "Electronic",
+      "year": 2023,
+      "country": "GB",
+      "duration_seconds": 219
+    },
+    {
+      "track_id": "GB002",
+      "title": "All I Need",
+      "artist": "alt-J",
+      "album": "The Dream",
+      "bpm": 90,
+      "genre": "Alternative",
+      "year": 2022,
+      "country": "GB",
+      "duration_seconds": 276
+    },
+    {
+      "track_id": "GB003",
+      "title": "Hometown",
+      "artist": "London Grammar",
+      "album": "Californian Soil",
+      "bpm": 88,
+      "genre": "Alternative",
+      "year": 2021,
+      "country": "GB",
+      "duration_seconds": 241
+    },
+    {
+      "track_id": "CA001",
+      "title": "Paradise",
+      "artist": "Kaytranada",
+      "album": "Timeless",
+      "bpm": 110,
+      "genre": "Electronic",
+      "year": 2024,
+      "country": "CA",
+      "duration_seconds": 195
+    },
+    {
+      "track_id": "CA002",
+      "title": "Ocean Drive",
+      "artist": "DRAMA",
+      "album": "Lies After Love",
+      "bpm": 120,
+      "genre": "Electronic",
+      "year": 2023,
+      "country": "CA",
+      "duration_seconds": 223
+    },
+    {
+      "track_id": "NZ001",
+      "title": "Breathe",
+      "artist": "LEISURE",
+      "album": "Twister",
+      "bpm": 98,
+      "genre": "Electronic",
+      "year": 2022,
+      "country": "NZ",
+      "duration_seconds": 212
+    },
+    {
+      "track_id": "AU007",
+      "title": "Chemical",
+      "artist": "Flight Facilities",
+      "album": "Forever",
+      "bpm": 125,
+      "genre": "Electronic",
+      "year": 2024,
+      "country": "AU",
+      "duration_seconds": 287
+    },
+    {
+      "track_id": "GB004",
+      "title": "Satellite",
+      "artist": "Years & Years",
+      "album": "Night Call",
+      "bpm": 133,
+      "genre": "Quality Pop",
+      "year": 2022,
+      "country": "GB",
+      "duration_seconds": 198
+    },
+    {
+      "track_id": "US005",
+      "title": "Running Wild",
+      "artist": "BANKS",
+      "album": "Serpentina",
+      "bpm": 105,
+      "genre": "Alternative",
+      "year": 2022,
+      "country": "US",
+      "duration_seconds": 234
+    },
+    {
+      "track_id": "AU008",
+      "title": "Horizon",
+      "artist": "Lastlings",
+      "album": "First Contact",
+      "bpm": 115,
+      "genre": "Electronic",
+      "year": 2023,
+      "country": "AU",
+      "duration_seconds": 256
+    },
+    {
+      "track_id": "SE001",
+      "title": "Dancing in the Moonlight",
+      "artist": "Royksopp",
+      "album": "Profound Mysteries III",
+      "bpm": 118,
+      "genre": "Electronic",
+      "year": 2023,
+      "country": "SE",
+      "duration_seconds": 301
+    },
+    {
+      "track_id": "AU009",
+      "title": "Violet City",
+      "artist": "Crooked Colours",
+      "album": "Langata",
+      "bpm": 122,
+      "genre": "Electronic",
+      "year": 2021,
+      "country": "AU",
+      "duration_seconds": 245
+    },
+    {
+      "track_id": "US006",
+      "title": "Velvet",
+      "artist": "Jungle",
+      "album": "Volcano",
+      "bpm": 110,
+      "genre": "Global Sounds",
+      "year": 2023,
+      "country": "GB",
+      "duration_seconds": 218
+    },
+    {
+      "track_id": "AU010",
+      "title": "Borderline (Remix)",
+      "artist": "Tame Impala",
+      "album": "The Slow Rush Deluxe",
+      "bpm": 138,
+      "genre": "Alternative",
+      "year": 2020,
+      "country": "AU",
+      "duration_seconds": 264
+    },
+    {
+      "track_id": "FR001",
+      "title": "Renaissance",
+      "artist": "Polo & Pan",
+      "album": "Cyclorama",
+      "bpm": 108,
+      "genre": "Global Sounds",
+      "year": 2021,
+      "country": "FR",
+      "duration_seconds": 193
+    },
+    {
+      "track_id": "US007",
+      "title": "Ceremony",
+      "artist": "Chromeo",
+      "album": "Adult Contemporary",
+      "bpm": 118,
+      "genre": "Electronic",
+      "year": 2024,
+      "country": "CA",
+      "duration_seconds": 227
+    },
+    {
+      "track_id": "AU011",
+      "title": "Alive",
+      "artist": "Hermitude",
+      "album": "Pollyanna",
+      "bpm": 130,
+      "genre": "Electronic",
+      "year": 2022,
+      "country": "AU",
+      "duration_seconds": 209
+    },
+    {
+      "track_id": "US008",
+      "title": "Crystalline",
+      "artist": "Porter Robinson",
+      "album": "Smile! :D",
+      "bpm": 145,
+      "genre": "Electronic",
+      "year": 2024,
+      "country": "US",
+      "duration_seconds": 278
+    },
+    {
+      "track_id": "GB005",
+      "title": "Shimmer",
+      "artist": "Foals",
+      "album": "Life Is Yours",
+      "bpm": 128,
+      "genre": "Alternative",
+      "year": 2022,
+      "country": "GB",
+      "duration_seconds": 241
+    },
+    {
+      "track_id": "AU012",
+      "title": "Weightless",
+      "artist": "Ta-ku",
+      "album": "Songs To Break Up To Revisited",
+      "bpm": 92,
+      "genre": "Electronic",
+      "year": 2021,
+      "country": "AU",
+      "duration_seconds": 183
+    }
+  ],
+  "metadata": {
+    "total_tracks": 30,
+    "australian_tracks": 12,
+    "australian_percentage": 40.0,
+    "genre_distribution": {
+      "Alternative": 7,
+      "Electronic": 15,
+      "Quality Pop": 2,
+      "Global Sounds": 2,
+      "Indie": 2
+    },
+    "era_distribution": {
+      "current_2024": 9,
+      "current_2023": 7,
+      "recent_2022": 9,
+      "recent_2021": 5
+    },
+    "country_distribution": {
+      "AU": 12,
+      "US": 8,
+      "GB": 5,
+      "CA": 3,
+      "NZ": 1,
+      "SE": 1,
+      "FR": 1
+    },
+    "bpm_range": {
+      "min": 88,
+      "max": 145,
+      "average": 115
+    },
+    "notes": [
+      "40% Australian content (exceeds 30% minimum requirement)",
+      "BPM range covers all daypart requirements (80-150)",
+      "Genre mix emphasizes Electronic (50%) and Alternative (23.3%)",
+      "Era distribution: Current (53.3%), Recent (46.7%)",
+      "Includes tracks from 7 countries for global diversity",
+      "All tracks from 2020-2024 period (no tracks older than 5 years)",
+      "Average track duration: 233 seconds (3:53)"
+    ],
+    "test_scenarios": [
+      "Morning drive selection (high BPM 110-140)",
+      "Midday flow (moderate BPM 95-125)",
+      "Evening wind-down (low BPM 85-110)",
+      "Australian content validation (minimum 30%)",
+      "Genre mix testing across all dayparts",
+      "Era distribution validation",
+      "BPM flow smoothness (max 15 BPM jumps)",
+      "Edge cases: highest BPM (145), lowest BPM (88)"
+    ]
+  }
+}
