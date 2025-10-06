@@ -1,17 +1,26 @@
-FROM python:3.12-slim
+FROM python:3.13-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.13-slim
 
 # Create a group and user with a specific uid and gid
 RUN groupadd -g 1000 m3u && useradd -u 1000 -g m3u -d /app -s /bin/bash m3u
 
 WORKDIR /app
 
-# Install dependencies and create a virtual environment
-COPY requirements.txt .
+# Install runtime dependencies (ffmpeg for media processing)
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg wkhtmltopdf && \
-    pip install --no-cache-dir -r requirements.txt && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Copy Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 
 # Copy application code and default configuration with proper ownership
 COPY --chown=m3u:m3u src /app/src
@@ -36,6 +45,10 @@ LABEL maintainer="troy@troykelly.com" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}"
+
+# Add healthcheck for AI playlist module
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "import src.ai_playlist" || exit 1
 
 # Switch to non-root user
 USER m3u

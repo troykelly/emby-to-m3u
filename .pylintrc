@@ -1,0 +1,15 @@
+[MASTER]
+# Disable minor style warnings that don't affect code quality
+disable=
+    logging-fstring-interpolation,  # f-strings in logging are fine in modern Python
+    too-many-branches,              # Complexity metrics - handled by other tools
+    too-many-statements,            # Complexity metrics - handled by other tools
+    too-many-locals,                # Complexity metrics - handled by other tools
+    too-many-positional-arguments,  # Modern Python handles this fine
+    broad-exception-caught,         # Sometimes necessary for MCP/API calls
+    broad-exception-raised,         # Sometimes necessary for abstraction
+    no-else-return,                 # Style preference, doesn't affect correctness
+
+[MESSAGES CONTROL]
+# Minimum score to pass
+min-score=9.0
