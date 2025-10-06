@@ -15,9 +15,9 @@ WORKDIR /app
 
 # Install runtime dependencies (ffmpeg for media processing)
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg aubio-tools && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
@@ -35,16 +35,16 @@ ARG VERSION
 ARG REPO_URL
 
 LABEL maintainer="troy@troykelly.com" \
-      org.opencontainers.image.title="M3U to AzuraCast" \
-      org.opencontainers.image.description="Extracts media from Emby and syncs to AzuraCast" \
-      org.opencontainers.image.authors="Troy Kelly <troy@troykellycom>" \
-      org.opencontainers.image.vendor="Troy Kelly" \
-      org.opencontainers.image.licenses="Apache 2.0" \
-      org.opencontainers.image.url="${REPO_URL}" \
-      org.opencontainers.image.source="${REPO_URL}" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.created="${BUILD_DATE}"
+  org.opencontainers.image.title="M3U to AzuraCast" \
+  org.opencontainers.image.description="Extracts media from Emby and syncs to AzuraCast" \
+  org.opencontainers.image.authors="Troy Kelly <troy@troykellycom>" \
+  org.opencontainers.image.vendor="Troy Kelly" \
+  org.opencontainers.image.licenses="Apache 2.0" \
+  org.opencontainers.image.url="${REPO_URL}" \
+  org.opencontainers.image.source="${REPO_URL}" \
+  org.opencontainers.image.version="${VERSION}" \
+  org.opencontainers.image.revision="${VCS_REF}" \
+  org.opencontainers.image.created="${BUILD_DATE}"
 
 # Add healthcheck for AI playlist module
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
