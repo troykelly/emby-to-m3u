@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP Prompts Contract",
+  "description": "JSON Schema for 5 MCP prompts exposed by Subsonic MCP Server",
+  "type": "object",
+  "prompts": {
+    "mood_playlist": {
+      "name": "mood_playlist",
+      "description": "Generate a curated playlist based on mood or activity",
+      "arguments": [
+        {
+          "name": "mood",
+          "description": "Target mood or genre (e.g., relaxing, energetic, jazz, rock)",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "name": "duration",
+          "description": "Target duration in minutes",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 300,
+            "default": 60
+          }
+        }
+      ],
+      "output": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": ["user"]
+                },
+                "content": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "text"
+                    },
+                    "text": {
+                      "type": "string",
+                      "description": "Prompt template with mood and duration filled in"
+                    }
+                  },
+                  "required": ["type", "text"]
+                }
+              },
+              "required": ["role", "content"]
+            }
+          }
+        },
+        "required": ["description", "messages"]
+      }
+    },
+    "music_discovery": {
+      "name": "music_discovery",
+      "description": "Discover new music based on user preferences and listening history",
+      "arguments": [
+        {
+          "name": "favorite_artists",
+          "description": "Comma-separated list of favorite artists",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "name": "genres",
+          "description": "Comma-separated list of preferred genres (optional)",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "output": {
+        "$ref": "#/definitions/PromptResult"
+      }
+    },
+    "listening_analysis": {
+      "name": "listening_analysis",
+      "description": "Analyze listening patterns and library composition",
+      "arguments": [
+        {
+          "name": "analysis_type",
+          "description": "Type of analysis to perform",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": ["genre_distribution", "artist_diversity", "decade_breakdown"]
+          }
+        }
+      ],
+      "output": {
+        "$ref": "#/definitions/PromptResult"
+      }
+    },
+    "smart_playlist": {
+      "name": "smart_playlist",
+      "description": "Create a rules-based smart playlist with specific criteria",
+      "arguments": [
+        {
+          "name": "criteria",
+          "description": "Playlist generation criteria (e.g., '80s rock with high energy')",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "name": "max_tracks",
+          "description": "Maximum number of tracks in playlist",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      ],
+      "output": {
+        "$ref": "#/definitions/PromptResult"
+      }
+    },
+    "library_curation": {
+      "name": "library_curation",
+      "description": "Organize and clean music library (find duplicates, missing metadata, quality issues)",
+      "arguments": [
+        {
+          "name": "task",
+          "description": "Curation task to perform",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": ["duplicates", "missing_metadata", "quality_issues"]
+          }
+        }
+      ],
+      "output": {
+        "$ref": "#/definitions/PromptResult"
+      }
+    }
+  },
+  "definitions": {
+    "PromptResult": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the prompt"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["user"]
+              },
+              "content": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "text"
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Formatted prompt text with arguments interpolated"
+                  }
+                },
+                "required": ["type", "text"]
+              }
+            },
+            "required": ["role", "content"]
+          }
+        }
+      },
+      "required": ["description", "messages"]
+    }
+  }
+}

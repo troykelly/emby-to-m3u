@@ -15,7 +15,6 @@
    → Data: Subsonic music library, track metadata, playlists, genres
    → Constraints: stdio transport, 5-min cache TTL, 80%+ test coverage
 3. For each unclear aspect:
-   → [NEEDS CLARIFICATION: Performance targets for large libraries (100k+ tracks)]
    → [NEEDS CLARIFICATION: Rate limiting strategy for Subsonic server protection]
    → [NEEDS CLARIFICATION: Error recovery behavior during server downtime]
 4. Fill User Scenarios & Testing section
@@ -35,6 +34,16 @@
 - ✅ Focus on WHAT users need and WHY
 - ❌ Avoid HOW to implement (no tech stack, APIs, code structure)
 - 👥 Written for business stakeholders, not developers
+
+---
+
+## Clarifications
+
+### Session 2025-10-06
+- Q: How should the system limit large search result sets? → A: 100 results with clear paging instructions
+- Q: How should the system handle concurrent requests? → A: Dynamic throttling based on server response times
+- Q: How should the system handle requests when the Subsonic server is unavailable? → A: Fail immediately with clear error message
+- Q: Should the MCP server implement fixed rate limiting to protect the Subsonic server? → A: No rate limit, rely only on dynamic throttling
 
 ---
 
@@ -67,7 +76,7 @@ A user wants to generate an AI-powered playlist for a specific mood or activity.
   → System returns: "No tracks found matching your criteria. Try broadening your search terms."
 
 - How does the system handle very large libraries (100k+ tracks)?
-  → [NEEDS CLARIFICATION: Should system paginate results, limit search scope, or implement progressive loading?]
+  → System limits all search results to maximum 100 tracks per query and provides clear pagination instructions to refine searches (e.g., "Showing first 100 results. Narrow your search by artist, genre, or year for more specific results.")
 
 - What happens when cache expires during an active conversation?
   → System automatically refreshes cache on next request with minimal latency impact
@@ -76,7 +85,7 @@ A user wants to generate an AI-powered playlist for a specific mood or activity.
   → System validates input and returns user-friendly error: "Invalid track ID. Please search for tracks first."
 
 - What happens when multiple LLM requests occur simultaneously?
-  → [NEEDS CLARIFICATION: Should system queue requests, process in parallel, or implement request throttling?]
+  → System uses dynamic throttling that monitors Subsonic server response times and adjusts concurrency automatically. When server responds quickly, allows more parallel requests; when response times increase, reduces concurrency to prevent overload.
 
 ## Requirements *(mandatory)*
 
@@ -99,12 +108,21 @@ A user wants to generate an AI-powered playlist for a specific mood or activity.
 - **FR-010**: System MUST cache search results to reduce Subsonic server load
 - **FR-011**: System MUST invalidate cache entries automatically after 5-minute TTL expires
 - **FR-012**: System MUST provide cache statistics in library resource
+- **FR-039**: System MUST limit all search result sets to maximum 100 tracks per query
+- **FR-040**: System MUST return pagination guidance when result limit is reached, instructing users to refine searches by artist, genre, year, or other criteria
+- **FR-041**: System MUST implement dynamic throttling that monitors Subsonic server response times
+- **FR-042**: System MUST adjust concurrent request limits based on server performance (increase concurrency when fast, decrease when slow)
+- **FR-043**: System MUST track average response time over sliding window to make throttling decisions
+- **FR-047**: System MUST NOT implement fixed rate limiting (requests per second caps), relying instead on adaptive dynamic throttling for server protection
 
 **Error Handling & Reliability**
 - **FR-013**: System MUST return user-friendly error messages for all failure scenarios (connection errors, authentication failures, invalid requests, missing tracks)
 - **FR-014**: System MUST handle Subsonic API errors gracefully without crashing the MCP server
 - **FR-015**: System MUST log errors with sufficient detail for troubleshooting while returning simplified messages to users
 - **FR-016**: System MUST validate all input parameters before calling Subsonic API
+- **FR-044**: System MUST fail immediately when Subsonic server is unreachable (no retries, no exponential backoff)
+- **FR-045**: System MUST NOT return stale cached data when server is unavailable
+- **FR-046**: System MUST provide clear error messages indicating server unavailability and suggesting user actions (check server status, network connectivity)
 
 **Music Search & Discovery**
 - **FR-017**: Search tools MUST support querying by track title, artist name, album name, and genre
@@ -145,14 +163,14 @@ A user wants to generate an AI-powered playlist for a specific mood or activity.
 - **MCP Server**: The server process that bridges Claude Desktop and the Subsonic music library. Manages tool routing, resource provisioning, prompt handling, caching, and error responses. Runs continuously via stdio transport.
 
 - **Tools**: 10 callable functions exposed to LLMs for music operations:
-  - search_tracks: Find tracks by query string
+  - search_tracks: Find tracks by query string (max 100 results)
   - get_track_info: Retrieve detailed metadata for specific track
   - get_artists: List all artists in library
   - get_artist_albums: Get albums for specific artist
   - get_album_tracks: Get tracks for specific album
-  - search_similar: Find similar tracks by artist/genre
+  - search_similar: Find similar tracks by artist/genre (max 100 results)
   - get_genres: List all genres with statistics
-  - get_tracks_by_genre: Get tracks filtered by genre
+  - get_tracks_by_genre: Get tracks filtered by genre (max 100 results)
   - analyze_library: Return library-wide statistics
   - stream_track: Generate streaming URL for playback
 
@@ -189,8 +207,7 @@ A user wants to generate an AI-powered playlist for a specific mood or activity.
 - [x] All mandatory sections completed
 
 ### Requirement Completeness
-- [ ] No [NEEDS CLARIFICATION] markers remain
-  - Still needs clarification on: large library performance, concurrent request handling, request queuing strategy
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Scope is clearly bounded
@@ -205,26 +222,20 @@ A user wants to generate an AI-powered playlist for a specific mood or activity.
 
 - [x] User description parsed
 - [x] Key concepts extracted (actors: LLMs, Claude Desktop users; actions: search, analyze, generate; data: music library; constraints: stdio, caching, testing)
-- [x] Ambiguities marked (3 clarification points identified)
+- [x] Ambiguities marked (0 clarification points remaining, 4 resolved)
 - [x] User scenarios defined (6 acceptance scenarios + 7 edge cases)
-- [x] Requirements generated (38 functional requirements across 8 categories)
+- [x] Requirements generated (47 functional requirements across 8 categories)
 - [x] Entities identified (7 key entities with relationships)
-- [x] Review checklist passed (with noted clarifications pending)
+- [x] Review checklist passed
 
 ---
 
 ## Open Questions for Stakeholder Clarification
 
-1. **Large Library Performance**: For libraries with 100,000+ tracks, what is the acceptable maximum response time for search operations? Should the system implement pagination, result limiting, or progressive loading?
+1. ~~**Large Library Performance**: For libraries with 100,000+ tracks, what is the acceptable maximum response time for search operations? Should the system implement pagination, result limiting, or progressive loading?~~ **RESOLVED**: Cap at 100 results with pagination guidance
 
-2. **Concurrent Request Handling**: When multiple LLM requests arrive simultaneously (e.g., multiple Claude Desktop instances), should the system:
-   - Queue requests and process sequentially?
-   - Process requests in parallel (risk of overwhelming Subsonic server)?
-   - Implement intelligent throttling based on server capacity?
+2. ~~**Concurrent Request Handling**: When multiple LLM requests arrive simultaneously (e.g., multiple Claude Desktop instances), should the system queue requests, process in parallel, or implement intelligent throttling?~~ **RESOLVED**: Dynamic throttling based on server response times
 
-3. **Error Recovery During Downtime**: If the Subsonic server becomes unavailable during operation, should the system:
-   - Retry requests with exponential backoff?
-   - Return stale cached data with a warning?
-   - Fail immediately and notify the user?
+3. ~~**Error Recovery During Downtime**: If the Subsonic server becomes unavailable during operation, should the system retry, return stale cache, or fail immediately?~~ **RESOLVED**: Fail immediately with clear error message
 
-4. **Rate Limiting Strategy**: Should the MCP server implement rate limiting to protect the Subsonic server from excessive requests? If so, what are appropriate limits (requests per second, per minute)?
+4. ~~**Rate Limiting Strategy**: Should the MCP server implement rate limiting to protect the Subsonic server from excessive requests?~~ **RESOLVED**: No fixed rate limit, rely on dynamic throttling only

@@ -1,0 +1,298 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP Resources Contract",
+  "description": "JSON Schema for 6 MCP resources exposed by Subsonic MCP Server",
+  "type": "object",
+  "resources": {
+    "library_stats": {
+      "uri": "library://stats",
+      "name": "Library Statistics",
+      "description": "Complete library statistics with cache info",
+      "mimeType": "application/json",
+      "schema": {
+        "$ref": "#/definitions/LibraryStats"
+      },
+      "caching": {
+        "ttl_seconds": 300,
+        "description": "5-minute TTL for library stats"
+      }
+    },
+    "artists": {
+      "uri": "library://artists",
+      "name": "Available Artists",
+      "description": "Complete artist catalog with metadata",
+      "mimeType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "artists": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Artist"
+            }
+          }
+        },
+        "required": ["total", "artists"]
+      },
+      "caching": {
+        "ttl_seconds": 300,
+        "description": "5-minute TTL for artist list"
+      }
+    },
+    "albums": {
+      "uri": "library://albums",
+      "name": "Available Albums",
+      "description": "Album collection with metadata",
+      "mimeType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "albums": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Album"
+            }
+          }
+        },
+        "required": ["total", "albums"]
+      },
+      "caching": {
+        "ttl_seconds": 300,
+        "description": "5-minute TTL for album list"
+      }
+    },
+    "genres": {
+      "uri": "library://genres",
+      "name": "Available Genres",
+      "description": "Genre taxonomy with track counts",
+      "mimeType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Genre"
+            }
+          }
+        },
+        "required": ["total", "genres"]
+      },
+      "caching": {
+        "ttl_seconds": 300,
+        "description": "5-minute TTL for genre list"
+      }
+    },
+    "playlists": {
+      "uri": "library://playlists",
+      "name": "User Playlists",
+      "description": "User-created playlists with track details",
+      "mimeType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "playlists": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Playlist"
+            }
+          }
+        },
+        "required": ["total", "playlists"]
+      },
+      "caching": {
+        "ttl_seconds": 120,
+        "description": "2-minute TTL (more dynamic than artists/genres)"
+      }
+    },
+    "recent_tracks": {
+      "uri": "library://recent",
+      "name": "Recently Added Tracks",
+      "description": "Recently added or modified tracks (last 100)",
+      "mimeType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Track"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": ["total", "tracks"]
+      },
+      "caching": {
+        "ttl_seconds": 60,
+        "description": "1-minute TTL (highly dynamic)"
+      }
+    }
+  },
+  "definitions": {
+    "LibraryStats": {
+      "type": "object",
+      "properties": {
+        "total_tracks": {
+          "type": "integer"
+        },
+        "total_artists": {
+          "type": "integer"
+        },
+        "total_albums": {
+          "type": "integer"
+        },
+        "total_genres": {
+          "type": "integer"
+        },
+        "library_size_mb": {
+          "type": "number"
+        },
+        "average_bitrate": {
+          "type": "number"
+        },
+        "cache_stats": {
+          "type": "object",
+          "properties": {
+            "cached_items": {
+              "type": "integer"
+            },
+            "hit_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      },
+      "required": ["total_tracks", "total_artists", "total_albums", "total_genres"]
+    },
+    "Artist": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "album_count": {
+          "type": "integer"
+        },
+        "track_count": {
+          "type": "integer"
+        }
+      },
+      "required": ["id", "name"]
+    },
+    "Album": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "artist": {
+          "type": "string"
+        },
+        "year": {
+          "type": ["integer", "null"]
+        },
+        "track_count": {
+          "type": "integer"
+        }
+      },
+      "required": ["id", "name", "artist"]
+    },
+    "Genre": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "track_count": {
+          "type": "integer"
+        },
+        "album_count": {
+          "type": "integer"
+        }
+      },
+      "required": ["name", "track_count"]
+    },
+    "Track": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "artist": {
+          "type": "string"
+        },
+        "album": {
+          "type": "string"
+        },
+        "genre": {
+          "type": ["string", "null"]
+        },
+        "year": {
+          "type": ["integer", "null"]
+        },
+        "duration": {
+          "type": ["integer", "null"]
+        },
+        "bitrate": {
+          "type": ["integer", "null"]
+        },
+        "streaming_url": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": ["id", "title", "artist", "streaming_url"]
+    },
+    "Playlist": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": ["string", "null"]
+        },
+        "track_count": {
+          "type": "integer"
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Track"
+          }
+        }
+      },
+      "required": ["id", "name", "track_count", "tracks"]
+    }
+  }
+}
