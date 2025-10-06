@@ -8,7 +8,7 @@ from mutagen import File as MutagenFile
 from subprocess import Popen, PIPE, CalledProcessError
 from math import isnan
 
-from logger import setup_logging
+from src.logger import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)

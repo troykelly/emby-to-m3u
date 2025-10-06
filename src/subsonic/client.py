@@ -303,7 +303,7 @@ class SubsonicClient:
         data = self._handle_response(response)
 
         # Check for OpenSubsonic
-        if 'openSubsonic' in data:
+        if 'openSubsonic' in data and isinstance(data['openSubsonic'], dict):
             self.opensubsonic = True
             self.opensubsonic_version = data['openSubsonic'].get('serverVersion')
             logger.info(f"OpenSubsonic server detected: version {self.opensubsonic_version}")

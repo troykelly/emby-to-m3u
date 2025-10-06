@@ -4,9 +4,9 @@ import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 from io import BytesIO
 
-from replaygain.main import process_replaygain, has_replaygain_metadata
+from src.replaygain.main import process_replaygain, has_replaygain_metadata
 
-from logger import setup_logging
+from src.logger import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)

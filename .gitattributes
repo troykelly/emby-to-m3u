@@ -1,0 +1,118 @@
+# Auto detect text files and perform LF normalisation
+* text=auto
+
+# Explicitly declare text files you want to always be normalised and converted
+# to native line endings on checkout.
+*.py text
+*.js text
+*.ts text
+*.jsx text
+*.tsx text
+*.json text
+*.md text
+*.txt text
+*.yml text
+*.yaml text
+*.toml text
+*.ini text
+*.cfg text
+*.conf text
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Declare files that will always have CRLF line endings on checkout.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Denote all files that are truly binary and should not be modified.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.flv binary
+*.fla binary
+*.swf binary
+*.gz binary
+*.zip binary
+*.7z binary
+*.ttf binary
+*.eot binary
+*.woff binary
+*.woff2 binary
+*.pyc binary
+*.pdf binary
+*.ez binary
+*.bz2 binary
+*.swp binary
+*.jar binary
+*.war binary
+*.ear binary
+*.class binary
+*.dll binary
+*.exe binary
+*.o binary
+*.so binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# Documents
+*.doc diff=astextplain
+*.DOC diff=astextplain
+*.docx diff=astextplain
+*.DOCX diff=astextplain
+*.dot diff=astextplain
+*.DOT diff=astextplain
+*.pdf diff=astextplain
+*.PDF diff=astextplain
+*.rtf diff=astextplain
+*.RTF diff=astextplain
+
+# Docker files
+Dockerfile text
+*.dockerfile text
+
+# Docker compose files
+docker-compose*.yml text
+docker-compose*.yaml text
+
+# Configuration files
+.editorconfig text
+.env text
+.env.* text
+.gitattributes text
+.gitconfig text
+.gitignore text
+.gitmodules text
+
+# Python specific
+*.pyi text
+requirements*.txt text
+setup.py text
+setup.cfg text
+MANIFEST.in text
+tox.ini text
+.python-version text
+
+# Node.js specific
+package.json text
+package-lock.json text
+yarn.lock text
+.nvmrc text
+.node-version text
+
+# Make scripts
+Makefile text
+makefile text
+*.mk text
+
+# Claude Flow specific
+.claude-flow/* text
+.hive-mind/* text
+.swarm/* text
+.agent/scripts/* text eol=lf
+.agent/configs/* text
