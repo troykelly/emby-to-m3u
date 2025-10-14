@@ -12,10 +12,54 @@ from typing import Optional, List, Dict, Any
 
 from src.ai_playlist.models import Playlist, SelectedTrack
 from src.azuracast.main import AzuraCastSync
+from src.subsonic.client import SubsonicClient
 from src.logger import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+class SubsonicTrack(dict):
+    """Track wrapper that extends dict and provides download() method using Subsonic client."""
+
+    def __init__(self, track_data: Dict[str, Any], subsonic_client: SubsonicClient):
+        """Initialize SubsonicTrack with metadata and Subsonic client reference.
+
+        Args:
+            track_data: Dictionary containing track metadata
+            subsonic_client: SubsonicClient instance for downloading audio
+        """
+        super().__init__(track_data)
+        self._subsonic_client = subsonic_client
+        self._content: Optional[bytes] = None
+
+    def download(self) -> bytes:
+        """Download track's audio content from Subsonic server.
+
+        Returns:
+            Binary content of the track's audio file
+
+        Raises:
+            Exception: If download fails or track ID is missing
+        """
+        if self._content is not None:
+            return self._content
+
+        track_id = self.get("Id")
+        if not track_id:
+            raise ValueError(f"Track ID missing for '{self.get('Name', 'Unknown')}'")
+
+        try:
+            logger.debug(f"Downloading track '{self.get('Name')}' (ID: {track_id}) from Subsonic")
+            self._content = self._subsonic_client.download_track(track_id)
+            return self._content
+        except Exception as e:
+            logger.error(f"Failed to download track '{self.get('Name')}' (ID: {track_id}): {e}")
+            raise
+
+    def clear_content(self) -> None:
+        """Clear cached audio content to free memory."""
+        self._content = None
 
 
 class AzuraCastPlaylistSyncError(Exception):
@@ -65,6 +109,9 @@ async def sync_playlist_to_azuracast(playlist: Playlist) -> Playlist:
     # Initialize AzuraCast client (reusing existing client)
     client = AzuraCastSync()
 
+    # Initialize Subsonic client for track downloads
+    subsonic_client = SubsonicClient()
+
     logger.info(
         f"Starting AzuraCast sync for playlist '{playlist.name}' "
         f"with {len(playlist.tracks)} tracks"
@@ -96,8 +143,10 @@ async def sync_playlist_to_azuracast(playlist: Playlist) -> Playlist:
             playlist_id = created_playlist["id"]
             logger.info(f"Created new playlist '{playlist.name}' (ID: {playlist_id})")
 
-        # Step 2: Convert SelectedTrack objects to Track-compatible dicts for upload
-        tracks_for_upload = _convert_selected_tracks_to_dict(playlist.tracks)
+        # Step 2: Convert SelectedTrack objects to SubsonicTrack objects with download capability
+        tracks_for_upload = _convert_selected_tracks_to_subsonic_tracks(
+            playlist.tracks, subsonic_client
+        )
 
         # Step 3: Upload tracks to AzuraCast (with duplicate detection)
         upload_success = client.upload_playlist(tracks_for_upload)
@@ -154,20 +203,23 @@ async def sync_playlist_to_azuracast(playlist: Playlist) -> Playlist:
         ) from e
 
 
-def _convert_selected_tracks_to_dict(selected_tracks: List[SelectedTrack]) -> List[Dict[str, Any]]:
+def _convert_selected_tracks_to_subsonic_tracks(
+    selected_tracks: List[SelectedTrack], subsonic_client: SubsonicClient
+) -> List[SubsonicTrack]:
     """
-    Converts SelectedTrack dataclass objects to Track-compatible dictionaries.
+    Converts SelectedTrack dataclass objects to SubsonicTrack objects with download capability.
 
-    The AzuraCast client expects Track objects with specific keys.
-    This function maps SelectedTrack fields to the expected format.
+    The AzuraCast client expects Track objects with .download() method.
+    This function creates SubsonicTrack wrappers that provide this functionality.
 
     Args:
         selected_tracks: List of SelectedTrack objects
+        subsonic_client: SubsonicClient instance for downloading audio
 
     Returns:
-        List of dictionaries compatible with AzuraCast client
+        List of SubsonicTrack objects compatible with AzuraCast client
     """
-    track_dicts = []
+    subsonic_tracks = []
 
     for track in selected_tracks:
         # Map SelectedTrack fields to Track dictionary keys
@@ -179,14 +231,16 @@ def _convert_selected_tracks_to_dict(selected_tracks: List[SelectedTrack]) -> Li
             "ProductionYear": track.year if track.year else "Unknown Year",
             "Path": f"/music/{track.artist}/{track.album}/{track.title}",  # Placeholder
             "ParentIndexNumber": 1,  # Default disk number
-            "IndexNumber": track.position,
+            "IndexNumber": track.position_in_playlist,
             # Additional metadata for duplicate detection
             "artist": track.artist,
             "album": track.album,
             "title": track.title,
         }
 
-        track_dicts.append(track_dict)
+        # Create SubsonicTrack with download capability
+        subsonic_track = SubsonicTrack(track_dict, subsonic_client)
+        subsonic_tracks.append(subsonic_track)
 
-    logger.debug(f"Converted {len(selected_tracks)} SelectedTrack objects to dicts")
-    return track_dicts
+    logger.debug(f"Converted {len(selected_tracks)} SelectedTrack objects to SubsonicTrack objects")
+    return subsonic_tracks
