@@ -35,7 +35,11 @@ from datetime import datetime
 from croniter import croniter
 from time import sleep
 
-from logger import setup_logging
+# Import logger - works both as script and module
+try:
+    from src.logger import setup_logging
+except ModuleNotFoundError:
+    from logger import setup_logging
 
 # Set up logging
 setup_logging()

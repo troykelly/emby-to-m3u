@@ -20,14 +20,25 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Any
 
-# Import all required modules
-from src.ai_playlist.config import AIPlaylistConfig
-from src.ai_playlist.document_parser import DocumentParser
-from src.ai_playlist.batch_executor import BatchPlaylistGenerator
-from src.ai_playlist.workflow import save_playlist_file
-from src.ai_playlist.models.core import Playlist, SelectedTrack
-from src.subsonic.client import SubsonicClient
-from src.azuracast.main import AzuraCastSync
+# Import all required modules - works both as script and module
+try:
+    from src.ai_playlist.config import AIPlaylistConfig
+    from src.ai_playlist.document_parser import DocumentParser
+    from src.ai_playlist.batch_executor import BatchPlaylistGenerator
+    from src.ai_playlist.workflow import save_playlist_file
+    from src.ai_playlist.models.core import Playlist, SelectedTrack
+    from src.subsonic.client import SubsonicClient
+    from src.azuracast.main import AzuraCastSync
+except ModuleNotFoundError:
+    # Running as script, add parent directory to path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from src.ai_playlist.config import AIPlaylistConfig
+    from src.ai_playlist.document_parser import DocumentParser
+    from src.ai_playlist.batch_executor import BatchPlaylistGenerator
+    from src.ai_playlist.workflow import save_playlist_file
+    from src.ai_playlist.models.core import Playlist, SelectedTrack
+    from src.subsonic.client import SubsonicClient
+    from src.azuracast.main import AzuraCastSync
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +147,8 @@ async def complete_end_to_end() -> DeploymentMetrics:
         logger.info("="*80)
 
         parser = DocumentParser()
-        station_identity_path = Path("/workspaces/emby-to-m3u/station-identity.md")
+        # Use relative path that works in both dev and container
+        station_identity_path = Path(__file__).parent.parent / "station-identity.md"
 
         if not station_identity_path.exists():
             error = f"Station identity file not found: {station_identity_path}"
