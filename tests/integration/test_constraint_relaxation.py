@@ -8,7 +8,7 @@ This test uses LIVE APIs (NO mocks).
 """
 import os
 import pytest
-from datetime import date, time
+from datetime import date, time, datetime
 from pathlib import Path
 from src.ai_playlist.config import AIPlaylistConfig
 from src.ai_playlist.document_parser import DocumentParser
@@ -87,7 +87,8 @@ class TestConstraintRelaxation:
                 energy_flow_requirements=["energetic"],
                 rotation_distribution={"Power": 1.0},
                 no_repeat_window_hours=4.0,
-            )
+            ),
+            created_at=datetime.now()
         )
 
         # Get limited track pool
@@ -151,7 +152,8 @@ class TestConstraintRelaxation:
                 energy_flow_requirements=["energetic"],
                 rotation_distribution={"Power": 1.0},
                 no_repeat_window_hours=4.0,
-            )
+            ),
+            created_at=datetime.now()
         )
 
         available_tracks = await subsonic_client.search_tracks(query="", limit=500)
@@ -211,7 +213,8 @@ class TestConstraintRelaxation:
                 energy_flow_requirements=["energetic"],
                 rotation_distribution={"Power": 1.0},
                 no_repeat_window_hours=4.0,
-            )
+            ),
+            created_at=datetime.now()
         )
 
         available_tracks = await subsonic_client.search_tracks(query="", limit=400)
@@ -262,7 +265,8 @@ class TestConstraintRelaxation:
                 energy_flow_requirements=["energetic"],
                 rotation_distribution={"Power": 1.0},
                 no_repeat_window_hours=4.0,
-            )
+            ),
+            created_at=datetime.now()
         )
 
         available_tracks = await subsonic_client.search_tracks(query="", limit=300)
@@ -325,7 +329,8 @@ class TestConstraintRelaxation:
                 energy_flow_requirements=["energetic"],
                 rotation_distribution={"Power": 1.0},
                 no_repeat_window_hours=4.0,
-            )
+            ),
+            created_at=datetime.now()
         )
 
         available_tracks = await subsonic_client.search_tracks(query="", limit=200)
@@ -378,7 +383,8 @@ class TestConstraintRelaxation:
                 energy_flow_requirements=["energetic"],
                 rotation_distribution={"Power": 1.0},
                 no_repeat_window_hours=4.0,
-            )
+            ),
+            created_at=datetime.now()
         )
 
         available_tracks = await subsonic_client.search_tracks(query="", limit=300)
