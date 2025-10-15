@@ -296,14 +296,36 @@ async def sync_to_azuracast(playlists: List[Playlist]) -> Dict[str, Optional[int
 def serialize_criteria(criteria: Any) -> Dict[str, Any]:
     """Serialize TrackSelectionCriteria to dict."""
     return {
-        "bpm_range": criteria.bpm_range,
-        "bpm_tolerance": criteria.bpm_tolerance,
-        "genre_mix": criteria.genre_mix,
-        "genre_tolerance": criteria.genre_tolerance,
-        "era_distribution": criteria.era_distribution,
-        "era_tolerance": criteria.era_tolerance,
-        "australian_min": criteria.australian_min,
-        "energy_flow": criteria.energy_flow,
+        "bpm_ranges": [
+            {
+                "time_start": str(r.time_start),
+                "time_end": str(r.time_end),
+                "bpm_min": r.bpm_min,
+                "bpm_max": r.bpm_max,
+            }
+            for r in criteria.bpm_ranges
+        ],
+        "genre_mix": {
+            genre: {
+                "target_percentage": gc.target_percentage,
+                "tolerance": gc.tolerance,
+            }
+            for genre, gc in criteria.genre_mix.items()
+        },
+        "era_distribution": {
+            era: {
+                "era_name": ec.era_name,
+                "min_year": ec.min_year,
+                "max_year": ec.max_year,
+                "target_percentage": ec.target_percentage,
+                "tolerance": ec.tolerance,
+            }
+            for era, ec in criteria.era_distribution.items()
+        },
+        "australian_content_min": criteria.australian_content_min,
+        "energy_flow_requirements": criteria.energy_flow_requirements,
+        "rotation_distribution": criteria.rotation_distribution,
+        "no_repeat_window_hours": criteria.no_repeat_window_hours,
     }
 
 
@@ -320,8 +342,8 @@ def serialize_tracks(tracks: Any) -> List[Dict[str, Any]]:
             "year": track.year,
             "country": track.country,
             "duration_seconds": track.duration_seconds,
-            "position": track.position,
-            "selection_reason": getattr(track, "selection_reason", ""),
+            "position_in_playlist": track.position_in_playlist,
+            "selection_reasoning": track.selection_reasoning,
         }
         for track in tracks
     ]
@@ -330,19 +352,24 @@ def serialize_tracks(tracks: Any) -> List[Dict[str, Any]]:
 def serialize_validation(validation: Any) -> Dict[str, Any]:
     """Serialize ValidationResult to dict."""
     return {
+        "overall_status": validation.overall_status.value,
         "constraint_scores": {
-            "constraint_satisfaction": validation.constraint_scores.constraint_satisfaction,
-            "bpm_satisfaction": validation.constraint_scores.bpm_satisfaction,
-            "genre_satisfaction": validation.constraint_scores.genre_satisfaction,
-            "era_satisfaction": validation.constraint_scores.era_satisfaction,
-            "australian_content": validation.constraint_scores.australian_content,
+            key: {
+                "constraint_name": score.constraint_name,
+                "target_value": float(score.target_value),
+                "actual_value": float(score.actual_value),
+                "is_compliant": score.is_compliant,
+                "deviation_percentage": float(score.deviation_percentage),
+            }
+            for key, score in validation.constraint_scores.items()
         },
-        "flow_metrics": {
-            "flow_quality_score": validation.flow_metrics.flow_quality_score,
-            "bpm_variance": validation.flow_metrics.bpm_variance,
-            "energy_progression": validation.flow_metrics.energy_progression,
-            "genre_diversity": validation.flow_metrics.genre_diversity,
+        "flow_quality_metrics": {
+            "bpm_variance": float(validation.flow_quality_metrics.bpm_variance),
+            "bpm_progression_coherence": float(validation.flow_quality_metrics.bpm_progression_coherence),
+            "energy_consistency": float(validation.flow_quality_metrics.energy_consistency),
+            "genre_diversity_index": float(validation.flow_quality_metrics.genre_diversity_index),
         },
+        "compliance_percentage": float(validation.compliance_percentage),
         "gap_analysis": validation.gap_analysis,
-        "passes_validation": validation.passes_validation,
+        "validated_at": validation.validated_at.isoformat(),
     }
