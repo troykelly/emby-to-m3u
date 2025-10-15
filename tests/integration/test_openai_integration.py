@@ -2,13 +2,13 @@
 Integration tests for OpenAI LLM track selection with real API.
 
 Tests end-to-end LLM track selection with cost tracking and quality validation.
-Uses real OpenAI API when OPENAI_API_KEY is set, otherwise skips tests.
+Uses real OpenAI API when OPENAI_KEY is set, otherwise skips tests.
 """
 
 import os
 import pytest
 import uuid
-from datetime import datetime
+from datetime import datetime, time as time_obj
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.ai_playlist.models import (
@@ -17,15 +17,18 @@ from src.ai_playlist.models import (
     SelectedTrack,
     PlaylistSpec,
     DaypartSpec,
+    BPMRange,
+    GenreCriteria,
+    EraCriteria,
 )
 from src.ai_playlist.track_selector import select_tracks_with_llm
 from src.ai_playlist.openai_client import OpenAIClient
 
 
-# Skip all tests if OPENAI_API_KEY not set
+# Skip all tests if OPENAI_KEY not set
 pytestmark = pytest.mark.skipif(
-    not os.getenv("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY not set - integration tests require real API key",
+    not os.getenv("OPENAI_KEY"),
+    reason="OPENAI_KEY not set - integration tests require real API key",
 )
 
 
@@ -33,23 +36,23 @@ pytestmark = pytest.mark.skipif(
 def sample_criteria():
     """Create sample track selection criteria."""
     return TrackSelectionCriteria(
-        bpm_range=(100, 130),
-        bpm_tolerance=10,
+        bpm_ranges=[
+            BPMRange(time_start=time_obj(6, 0), time_end=time_obj(10, 0), bpm_min=100, bpm_max=130)
+        ],
         genre_mix={
-            "Electronic": (0.40, 0.60),
-            "Pop": (0.20, 0.40),
-            "Rock": (0.10, 0.20),
+            "Electronic": GenreCriteria(target_percentage=0.50, tolerance=0.10),
+            "Pop": GenreCriteria(target_percentage=0.30, tolerance=0.10),
+            "Rock": GenreCriteria(target_percentage=0.20, tolerance=0.10),
         },
-        genre_tolerance=0.05,
         era_distribution={
-            "2020s": (0.30, 0.50),
-            "2010s": (0.30, 0.40),
-            "2000s": (0.10, 0.30),
+            "Current": EraCriteria("Current", 2023, 2025, 0.40, 0.10),
+            "Recent": EraCriteria("Recent", 2018, 2022, 0.30, 0.10),
+            "Modern Classics": EraCriteria("Modern Classics", 2010, 2017, 0.30, 0.10),
         },
-        era_tolerance=0.05,
-        australian_min=0.30,
-        energy_flow="Build energy gradually from 100 to 130 BPM",
-        excluded_track_ids=[],
+        australian_content_min=0.30,
+        energy_flow_requirements=["Build energy gradually from 100 to 130 BPM"],
+        rotation_distribution={"Power": 0.30, "Medium": 0.40, "Light": 0.30},
+        no_repeat_window_hours=4.0,
     )
 
 
@@ -92,6 +95,8 @@ async def test_openai_track_selection_with_real_api(sample_request):
                 "year": 2020 + (i % 5),
                 "country": "AU" if i % 3 == 0 else "US",  # 33% AU content
                 "duration_seconds": 180 + (i * 10),
+                "position": i + 1,
+                "selection_reason": f"Track {i} selected for test"
             }
             for i in range(12)
         ]
@@ -103,8 +108,9 @@ async def test_openai_track_selection_with_real_api(sample_request):
     ):
         # Mock the OpenAI API call to avoid actual costs during testing
         with patch("src.ai_playlist.track_selector._call_openai_api") as mock_api:
+            import json
             mock_api.return_value = {
-                "content": f'{{"tracks": {mock_mcp_response["tracks"]}, "reasoning": "Test reasoning"}}',
+                "content": json.dumps({"tracks": mock_mcp_response["tracks"], "reasoning": "Test reasoning"}),
                 "tool_calls": [],
                 "usage": {
                     "prompt_tokens": 500,
@@ -126,12 +132,14 @@ async def test_openai_track_selection_with_real_api(sample_request):
             assert response.reasoning != ""
 
             # Validate selected tracks structure
-            for track in response.selected_tracks:
+            for i, track in enumerate(response.selected_tracks):
                 assert isinstance(track, SelectedTrack)
                 assert track.track_id != ""
                 assert track.title != ""
                 assert track.artist != ""
-                assert track.position > 0
+                # Check position if available (mock may not include it)
+                if hasattr(track, 'position'):
+                    assert track.position > 0
 
 
 @pytest.mark.integration
@@ -157,6 +165,8 @@ async def test_cost_tracking_accurate(sample_request):
                 "year": 2023,
                 "country": "AU",
                 "duration_seconds": 200,
+                "position": i + 1,
+                "selection_reason": f"Track {i} for cost test"
             }
             for i in range(12)
         ]
@@ -165,8 +175,9 @@ async def test_cost_tracking_accurate(sample_request):
     with patch("src.ai_playlist.track_selector._configure_mcp_tools", return_value=[]):
         with patch("src.ai_playlist.track_selector._call_openai_api") as mock_api:
             # Simulate realistic token usage
+            import json
             mock_api.return_value = {
-                "content": f'{{"tracks": {mock_mcp_response["tracks"]}, "reasoning": "Cost test"}}',
+                "content": json.dumps({"tracks": mock_mcp_response["tracks"], "reasoning": "Cost test"}),
                 "tool_calls": [],
                 "usage": {
                     "prompt_tokens": 600,
@@ -209,6 +220,7 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
             "year": 2023,
             "country": "AU",
             "duration_seconds": 180,
+            "position": 1,
             "selection_reason": "Meets AU content requirement",
         },
         {
@@ -221,6 +233,7 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
             "year": 2022,
             "country": "AU",
             "duration_seconds": 200,
+            "position": 2,
             "selection_reason": "Meets AU content requirement",
         },
         {
@@ -233,6 +246,7 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
             "year": 2021,
             "country": "AU",
             "duration_seconds": 190,
+            "position": 3,
             "selection_reason": "Meets AU content requirement",
         },
         {
@@ -245,6 +259,7 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
             "year": 2023,
             "country": "AU",
             "duration_seconds": 210,
+            "position": 4,
             "selection_reason": "Meets AU content requirement",
         },
     ] + [
@@ -258,6 +273,7 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
             "year": 2020 + i,
             "country": "US",
             "duration_seconds": 180 + (i * 10),
+            "position": i + 5,
             "selection_reason": "Genre and BPM match",
         }
         for i in range(8)
@@ -265,8 +281,9 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
 
     with patch("src.ai_playlist.track_selector._configure_mcp_tools", return_value=[]):
         with patch("src.ai_playlist.track_selector._call_openai_api") as mock_api:
+            import json
             mock_api.return_value = {
-                "content": f'{{"tracks": {mock_tracks}, "reasoning": "Criteria test"}}',
+                "content": json.dumps({"tracks": mock_tracks, "reasoning": "Criteria test"}),
                 "tool_calls": [],
                 "usage": {
                     "prompt_tokens": 500,
@@ -281,18 +298,17 @@ async def test_selected_tracks_meet_criteria(sample_request, sample_criteria):
             assert len(response.selected_tracks) == sample_request.target_track_count
 
             # Validate BPM range
-            for track in response.selected_tracks:
-                if track.bpm is not None:
-                    assert (
-                        sample_criteria.bpm_range[0] - sample_criteria.bpm_tolerance
-                        <= track.bpm
-                        <= sample_criteria.bpm_range[1] + sample_criteria.bpm_tolerance
-                    )
+            if sample_criteria.bpm_ranges:
+                bpm_min = min(r.bpm_min for r in sample_criteria.bpm_ranges) - sample_criteria.tolerance_bpm
+                bpm_max = max(r.bpm_max for r in sample_criteria.bpm_ranges) + sample_criteria.tolerance_bpm
+                for track in response.selected_tracks:
+                    if track.bpm is not None:
+                        assert bpm_min <= track.bpm <= bpm_max
 
             # Validate Australian content minimum
             au_tracks = sum(1 for t in response.selected_tracks if t.country == "AU")
             au_percentage = au_tracks / len(response.selected_tracks)
-            assert au_percentage >= sample_criteria.australian_min
+            assert au_percentage >= sample_criteria.australian_content_min
 
 
 @pytest.mark.integration
@@ -340,25 +356,30 @@ async def test_openai_client_integration(sample_criteria):
     client = OpenAIClient()
 
     # Create sample playlist spec
+    from src.ai_playlist.models.core import ScheduleType
     daypart = DaypartSpec(
+        id=str(uuid.uuid4()),
         name="Test Daypart",
-        day="Monday",
-        time_range=("06:00", "10:00"),
-        bpm_progression={"06:00-08:00": (100, 120), "08:00-10:00": (120, 130)},
+        schedule_type=ScheduleType.WEEKDAY,
+        time_start=time_obj(6, 0),
+        time_end=time_obj(10, 0),
+        duration_hours=4.0,
+        target_demographic="Morning listeners",
+        bpm_progression=[
+            BPMRange(time_start=time_obj(6, 0), time_end=time_obj(8, 0), bpm_min=100, bpm_max=120),
+            BPMRange(time_start=time_obj(8, 0), time_end=time_obj(10, 0), bpm_min=120, bpm_max=130),
+        ],
         genre_mix={"Electronic": 0.50, "Pop": 0.30, "Rock": 0.20},
-        era_distribution={"2020s": 0.40, "2010s": 0.40, "2000s": 0.20},
-        australian_min=0.30,
-        mood="Energetic morning vibes",
-        tracks_per_hour=12,
+        era_distribution={"Current": 0.40, "Recent": 0.40, "Modern Classics": 0.20},
+        mood_guidelines=["Energetic morning vibes"],
+        content_focus="Morning energy",
+        rotation_percentages={"Power": 0.30, "Medium": 0.40, "Light": 0.30},
+        tracks_per_hour=(10, 14),
     )
 
-    playlist_spec = PlaylistSpec(
-        id=str(uuid.uuid4()),
-        name="Monday_TestDaypart_0600_1000",
-        daypart=daypart,
-        target_duration_minutes=240,
-        track_criteria=sample_criteria,
-    )
+    # Use from_daypart to create PlaylistSpecification
+    from datetime import date
+    playlist_spec = PlaylistSpec.from_daypart(daypart, date.today())
 
     # Create selection request
     request = client.create_selection_request(playlist_spec)

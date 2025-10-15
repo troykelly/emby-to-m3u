@@ -10,7 +10,9 @@ import colorlog
 class PostmarkHandler(logging.Handler):
     """Custom logging handler to send error logs via PostmarkApp."""
 
-    def __init__(self, api_token: str, sender_email: str, receiver_emails: List[str], subject: str) -> None:
+    def __init__(
+        self, api_token: str, sender_email: str, receiver_emails: List[str], subject: str
+    ) -> None:
         """
         Initialize the handler.
 
@@ -44,17 +46,19 @@ class PostmarkHandler(logging.Handler):
             print(f"Failed to format log entry: {e}")
 
         payload = {
-            'From': self.sender_email,
-            'To': ','.join(self.receiver_emails),
-            'Subject': self.subject,
-            'TextBody': log_entry,
+            "From": self.sender_email,
+            "To": ",".join(self.receiver_emails),
+            "Subject": self.subject,
+            "TextBody": log_entry,
         }
         headers = {
-            'X-Postmark-Server-Token': self.api_token,
-            'Content-Type': 'application/json',
+            "X-Postmark-Server-Token": self.api_token,
+            "Content-Type": "application/json",
         }
         try:
-            response = requests.post('https://api.postmarkapp.com/email', json=payload, headers=headers)
+            response = requests.post(
+                "https://api.postmarkapp.com/email", json=payload, headers=headers
+            )
             response.raise_for_status()
         except requests.RequestException as e:
             print(f"Failed to send email alert: {e}")
@@ -62,18 +66,18 @@ class PostmarkHandler(logging.Handler):
 
 def setup_logging() -> None:
     """Configure the centralized logging settings."""
-    log_level = os.getenv('M3U_LOG_LEVEL', 'INFO').upper()
-    log_file = os.getenv('M3U_LOG_FILE')
-    max_bytes = int(os.getenv('LOG_FILE_MAX_BYTES', '10485760'))  # 10 MB
-    backup_count = int(os.getenv('LOG_FILE_BACKUP_COUNT', '5'))
-    postmark_api_token = os.getenv('POSTMARK_API_TOKEN')
-    postmark_sender_email = os.getenv('POSTMARK_SENDER_EMAIL')
-    postmark_receiver_emails = os.getenv('POSTMARK_RECEIVER_EMAILS')
-    postmark_alert_subject = os.getenv('POSTMARK_ALERT_SUBJECT', 'Application Error Alert')
+    log_level = os.getenv("M3U_LOG_LEVEL", "INFO").upper()
+    log_file = os.getenv("M3U_LOG_FILE")
+    max_bytes = int(os.getenv("LOG_FILE_MAX_BYTES", "10485760"))  # 10 MB
+    backup_count = int(os.getenv("LOG_FILE_BACKUP_COUNT", "5"))
+    postmark_api_token = os.getenv("POSTMARK_API_TOKEN")
+    postmark_sender_email = os.getenv("POSTMARK_SENDER_EMAIL")
+    postmark_receiver_emails = os.getenv("POSTMARK_RECEIVER_EMAILS")
+    postmark_alert_subject = os.getenv("POSTMARK_ALERT_SUBJECT", "Application Error Alert")
 
     # Create a standard file formatter upfront
     file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s - (%(filename)s:%(lineno)d)'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s - (%(filename)s:%(lineno)d)"
     )
 
     # Create a custom logger
@@ -86,19 +90,21 @@ def setup_logging() -> None:
         console_formatter = colorlog.ColoredFormatter(
             "%(log_color)s%(levelname)s:%(name)s:%(message)s",
             log_colors={
-                'DEBUG': 'bold_blue',
-                'INFO': 'bold_green',
-                'WARNING': 'bold_yellow',
-                'ERROR': 'bold_red',
-                'CRITICAL': 'bold_purple'
-            }
+                "DEBUG": "bold_blue",
+                "INFO": "bold_green",
+                "WARNING": "bold_yellow",
+                "ERROR": "bold_red",
+                "CRITICAL": "bold_purple",
+            },
         )
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
 
         # Add file handler if LOG_FILE is specified
         if log_file:
-            file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
+            file_handler = RotatingFileHandler(
+                log_file, maxBytes=max_bytes, backupCount=backup_count
+            )
             file_handler.setFormatter(file_formatter)
             logger.addHandler(file_handler)
 
@@ -107,8 +113,8 @@ def setup_logging() -> None:
             postmark_handler = PostmarkHandler(
                 api_token=postmark_api_token,
                 sender_email=postmark_sender_email,
-                receiver_emails=postmark_receiver_emails.split(','),
-                subject=postmark_alert_subject
+                receiver_emails=postmark_receiver_emails.split(","),
+                subject=postmark_alert_subject,
             )
             postmark_handler.setFormatter(file_formatter)  # Ensure the same formatter is used
             postmark_handler.setLevel(logging.ERROR)

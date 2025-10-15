@@ -10,12 +10,14 @@ Tests all aspects of openai_client.py including:
 - Singleton pattern (3 tests)
 """
 
-import pytest
 import asyncio
 import os
-import threading
-from unittest.mock import Mock, AsyncMock, patch, MagicMock, call
-from datetime import datetime
+import uuid
+from datetime import datetime, time, date
+from decimal import Decimal
+from unittest.mock import Mock, AsyncMock, patch
+
+import pytest
 import tiktoken
 
 from src.ai_playlist.openai_client import (
@@ -23,9 +25,13 @@ from src.ai_playlist.openai_client import (
     get_client,
 )
 from src.ai_playlist.models.core import (
-    PlaylistSpec,
-    DaypartSpec,
+    PlaylistSpecification,
+    DaypartSpecification,
     TrackSelectionCriteria,
+    BPMRange,
+    ScheduleType,
+    GenreCriteria,
+    EraCriteria,
 )
 from src.ai_playlist.models.llm import (
     LLMTrackSelectionRequest,
@@ -41,16 +47,41 @@ from src.ai_playlist.models.llm import (
 @pytest.fixture
 def sample_daypart():
     """Sample daypart specification for testing."""
-    return DaypartSpec(
+    return DaypartSpecification(
+        id=str(uuid.uuid4()),
         name="Production Call",
-        day="Monday",
-        time_range=("06:00", "10:00"),
-        bpm_progression={"06:00-10:00": (90, 130)},
-        genre_mix={"Alternative": 0.25, "Electronic": 0.20},
-        era_distribution={"Current (0-2 years)": 0.40},
-        australian_min=0.30,
-        mood="energetic morning vibe",
-        tracks_per_hour=15
+        schedule_type=ScheduleType.WEEKDAY,
+        time_start=time(6, 0),
+        time_end=time(10, 0),
+        duration_hours=4.0,
+        target_demographic="Working professionals",
+        bpm_progression=[
+            BPMRange(
+                time_start=time(6, 0),
+                time_end=time(10, 0),
+                bpm_min=90,
+                bpm_max=130
+            )
+        ],
+        genre_mix={
+            "Alternative": 0.25,
+            "Electronic": 0.20,
+            "Rock": 0.55
+        },
+        era_distribution={
+            "Current": 0.40,
+            "Recent": 0.30,
+            "Modern Classics": 0.30
+        },
+        mood_guidelines=["energetic", "upbeat", "morning vibe"],
+        content_focus="High-energy music for morning commute",
+        rotation_percentages={
+            "Power": 0.40,
+            "Medium": 0.35,
+            "Light": 0.25
+        },
+        tracks_per_hour=(12, 15),
+        mood_exclusions=["melancholy", "dark"]
     )
 
 
@@ -58,34 +89,88 @@ def sample_daypart():
 def sample_criteria():
     """Sample track selection criteria for testing."""
     return TrackSelectionCriteria(
-        bpm_range=(90, 130),
-        bpm_tolerance=10,
-        genre_mix={"Alternative": (0.20, 0.30), "Electronic": (0.15, 0.25)},
-        genre_tolerance=0.05,
-        era_distribution={"Current (0-2 years)": (0.35, 0.45)},
-        era_tolerance=0.05,
-        australian_min=0.30,
-        energy_flow="energetic morning vibe"
+        bpm_ranges=[
+            BPMRange(
+                time_start=time(6, 0),
+                time_end=time(10, 0),
+                bpm_min=90,
+                bpm_max=130
+            )
+        ],
+        genre_mix={
+            "Alternative": GenreCriteria(
+                target_percentage=0.25,
+                tolerance=0.10
+            ),
+            "Electronic": GenreCriteria(
+                target_percentage=0.20,
+                tolerance=0.10
+            ),
+            "Rock": GenreCriteria(
+                target_percentage=0.55,
+                tolerance=0.10
+            )
+        },
+        era_distribution={
+            "Current": EraCriteria(
+                era_name="Current",
+                min_year=2023,
+                max_year=2025,
+                target_percentage=0.40,
+                tolerance=0.10
+            ),
+            "Recent": EraCriteria(
+                era_name="Recent",
+                min_year=2020,
+                max_year=2022,
+                target_percentage=0.30,
+                tolerance=0.10
+            ),
+            "Modern Classics": EraCriteria(
+                era_name="Modern Classics",
+                min_year=2015,
+                max_year=2019,
+                target_percentage=0.30,
+                tolerance=0.10
+            )
+        },
+        australian_content_min=0.30,
+        energy_flow_requirements=["energetic", "upbeat", "morning vibe"],
+        rotation_distribution={
+            "Power": 0.40,
+            "Medium": 0.35,
+            "Light": 0.25
+        },
+        no_repeat_window_hours=4.0,
+        tolerance_bpm=10,
+        tolerance_genre_percent=0.10,
+        tolerance_era_percent=0.10,
+        mood_filters_include=[],
+        mood_filters_exclude=["melancholy", "dark"]
     )
 
 
 @pytest.fixture
 def sample_playlist_spec(sample_daypart, sample_criteria):
     """Sample playlist specification for testing."""
-    import uuid
-    return PlaylistSpec(
+    return PlaylistSpecification(
         id=str(uuid.uuid4()),
-        name="Monday_ProductionCall_0600_1000",
-        daypart=sample_daypart,
-        track_criteria=sample_criteria,
-        target_duration_minutes=240,
-        created_at=datetime.now()
+        name="Production Call - 2025-10-07",
+        source_daypart_id=sample_daypart.id,
+        generation_date=date(2025, 10, 7),
+        target_track_count_min=48,
+        target_track_count_max=60,
+        track_selection_criteria=sample_criteria,
+        created_at=datetime.now(),
+        cost_budget_allocated=Decimal('0.01')
     )
 
 
 @pytest.fixture
 def clear_singleton():
     """Clear singleton instance before each test."""
+    # Note: Accessing protected member for testing purposes
+    # pylint: disable=protected-access
     import src.ai_playlist.openai_client as module
     module._client_instance = None
     yield
@@ -147,7 +232,7 @@ class TestOpenAIClientInitialization:
             if 'OPENAI_API_KEY' in os.environ:
                 del os.environ['OPENAI_API_KEY']
 
-            with pytest.raises(ValueError, match="OPENAI_API_KEY must be provided"):
+            with pytest.raises(ValueError, match="OPENAI_API_KEY or OPENAI_KEY must be provided"):
                 OpenAIClient()
 
     def test_client_instance_reuse_singleton(self, clear_singleton):
@@ -191,7 +276,7 @@ class TestOpenAIClientInitialization:
 # ============================================================================
 
 class TestRequestCreation:
-    """Test suite for LLM request creation from PlaylistSpec."""
+    """Test suite for LLM request creation from PlaylistSpecification."""
 
     def test_create_selection_request_from_playlist_spec(self, sample_playlist_spec):
         """Test create_selection_request() generates valid LLMTrackSelectionRequest."""
@@ -315,7 +400,6 @@ class TestTokenEstimation:
         """Test token counting for various message structures."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         # Short prompt
         short_request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
@@ -356,7 +440,6 @@ class TestTokenEstimation:
         """Test output token estimation scales with target track count."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         request_10 = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -399,7 +482,6 @@ class TestTokenEstimation:
         """Test token estimation edge cases (empty, very long prompts)."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         # Empty prompt
         empty_request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
@@ -453,7 +535,6 @@ class TestCostEstimation:
         """Test input token cost calculation ($0.15 per 1M tokens)."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -475,7 +556,6 @@ class TestCostEstimation:
         """Test output token cost calculation ($0.60 per 1M tokens)."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -523,7 +603,6 @@ class TestCostEstimation:
         """Test cost estimation detects when budget would be exceeded."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         # Create request with very high track count
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
@@ -544,7 +623,6 @@ class TestCostEstimation:
         """Test cost scales proportionally with request size."""
         client = OpenAIClient(api_key="test-key")
 
-        import uuid
         costs = []
         for track_count in [10, 50, 100]:
             request = LLMTrackSelectionRequest(
@@ -590,7 +668,6 @@ class TestLLMCallExecution:
         # Mock the track parser to return at least one track
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -619,7 +696,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -651,7 +727,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -683,7 +758,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -712,7 +786,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -740,7 +813,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -767,7 +839,6 @@ class TestLLMCallExecution:
 
         client.client.chat.completions.create = slow_call
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -789,7 +860,6 @@ class TestLLMCallExecution:
             side_effect=Exception("API Error: Rate limit exceeded")
         )
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -816,7 +886,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -846,7 +915,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,
@@ -876,7 +944,6 @@ class TestLLMCallExecution:
         client.client.chat.completions.create = AsyncMock(return_value=mock_response)
         client._parse_tracks_from_response = Mock(return_value=[mock_selected_track])
 
-        import uuid
         request = LLMTrackSelectionRequest(
             playlist_id=str(uuid.uuid4()),
             criteria=sample_criteria,

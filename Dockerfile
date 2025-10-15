@@ -22,11 +22,13 @@ RUN apt-get update && \
 # Copy Python packages from builder stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 
-# Copy application code and default configuration with proper ownership
+# Copy application code, scripts, and station identity with proper ownership
 COPY --chown=m3u:m3u src /app/src
+COPY --chown=m3u:m3u scripts /app/scripts
+COPY --chown=m3u:m3u station-identity.md /app/station-identity.md
 
-# Ensure the working directory has correct ownership
-RUN chown -R m3u:m3u /app
+# Create output directories
+RUN mkdir -p /app/playlists /app/logs && chown -R m3u:m3u /app
 
 # Metadata labels for best practices
 ARG BUILD_DATE

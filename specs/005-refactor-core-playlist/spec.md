@@ -43,6 +43,9 @@
 ### Session 2025-10-06
 - Q: When the music library lacks sufficient tracks to meet daypart criteria (e.g., only 10 Australian electronic tracks exist but 30 are needed for a 2-hour specialty show), how should the system respond? → A: Relax constraints progressively (e.g., expand BPM range ±10) until sufficient tracks found
 - Q: What is the acceptable variance percentage for genre distribution compliance (FR-022)? For example, if a daypart specifies "25% Contemporary Alternative," what deviation is acceptable before flagging non-compliance? → A: ±10% tolerance (15-35% acceptable for 25% target)
+- Q: When track BPM or other critical metadata is missing from the music library, what should the system do? → A: Data should be retrieved (and cached permanently) from LastFM and if it still unavailable use aubio
+- Q: When generating multiple playlists with a total cost budget (FR-009), how should the budget be distributed across playlists? → A: Total cost budget configurable as hard or suggested (with warnings). Hard limit uses dynamic allocation. Both configurable via environment variables, defaulting to suggested and dynamic
+- Q: What happens if station-identity.md is updated with new programming rules while playlists are being generated? → A: Lock station-identity.md during generation to prevent concurrent updates
 
 ---
 
@@ -85,9 +88,9 @@ As a Production City Radio programming director, I need the playlist generator t
 ### Edge Cases
 - When the music library doesn't have enough tracks matching a specific daypart's criteria (e.g., insufficient Australian electronic tracks with BPM 115-130), the system progressively relaxes constraints (e.g., expand BPM range ±10, then ±15) until sufficient tracks are found, logging each relaxation step
 - How does the system handle conflicting requirements (e.g., a specialty show requiring 100% jazz when the library has limited jazz tracks meeting BPM requirements)?
-- What happens if station-identity.md is updated with new programming rules while playlists are being generated?
+- The system locks station-identity.md during playlist generation to prevent concurrent updates, ensuring consistency across all playlists in a batch; new programming rules apply only to subsequent generation runs after lock release
 - How does the system ensure no song repeats within a 5-hour daypart (e.g., Midday requirement: "no-repeat workday" experience)?
-- What happens when BPM metadata is missing or incorrect for tracks in the library?
+- When BPM or other critical metadata is missing for tracks, the system retrieves data from Last.fm API and caches permanently; if still unavailable, analyzes audio using aubio-tools to extract BPM and caches the result
 
 ## Requirements *(mandatory)*
 
@@ -98,13 +101,15 @@ As a Production City Radio programming director, I need the playlist generator t
 - **FR-002**: System MUST support multiple programming structures (Monday-Friday, Weekend Saturday/Sunday) with distinct daypart definitions for each schedule
 - **FR-003**: System MUST extract and enforce rotation strategy categories (Power Rotation 60-70 spins/week, Medium Rotation 35 spins/week, Light Rotation 10-14 spins/week, Recurrent, Library/Gold)
 - **FR-004**: System MUST recognize specialty programming constraints (e.g., 100% Australian, 100% Electronic, theme-based hours) and generate playlists accordingly
+- **FR-031**: System MUST acquire an exclusive lock on station-identity.md at the start of playlist generation batch and release lock upon completion, preventing concurrent modifications during generation to ensure consistency across all playlists
 
 #### AI/ML Playlist Generation
 - **FR-005**: System MUST use AI/ML capabilities to select tracks that match daypart criteria with explainable reasoning for each selection
 - **FR-006**: System MUST generate playlists that satisfy multiple concurrent constraints (BPM range, genre mix, era distribution, Australian content, mood/energy, rotation category)
 - **FR-007**: System MUST provide selection reasoning for each track that references station programming objectives (e.g., "Selected for Morning Drive energy level and positive lyrical content")
 - **FR-008**: System MUST generate target track count based on daypart duration and tracks-per-hour specification (e.g., 12-14 songs/hour for Morning Drive = 48-56 tracks for 4-hour show)
-- **FR-009**: System MUST implement cost controls for LLM API usage with configurable maximum cost per playlist and total budget
+- **FR-009**: System MUST implement cost controls for LLM API usage with configurable total budget mode (hard limit or suggested with warnings) and allocation strategy (dynamic based on complexity or equal distribution), both configurable via environment variables with defaults: suggested budget mode and dynamic allocation
+- **FR-030**: System MUST dynamically allocate budget across playlists when hard limit mode is enabled, adjusting per-playlist cost based on playlist complexity and constraint satisfaction requirements; MUST warn operators when suggested budget mode is exceeded but continue generation
 
 #### Track Selection & Validation
 - **FR-010**: System MUST query music library (via existing Subsonic/Emby endpoints) to retrieve available tracks with metadata (title, artist, album, BPM, genre, year, country)
@@ -114,6 +119,7 @@ As a Production City Radio programming director, I need the playlist generator t
 - **FR-014**: System MUST support BPM progression requirements (e.g., Morning Drive: 90-115 → 110-135 → 100-120 over 4 hours)
 - **FR-015**: System MUST apply mood/energy filters (e.g., exclude melancholy ballads from Morning Drive, avoid aggressive tracks during Midday)
 - **FR-028**: System MUST implement progressive constraint relaxation when insufficient tracks are available (expand BPM range in ±10 BPM increments, then relax genre/era constraints), logging each relaxation step in decision log
+- **FR-029**: System MUST retrieve missing track metadata (BPM, genre, etc.) from Last.fm API and cache permanently; if unavailable from Last.fm, MUST analyze audio files using aubio-tools to extract BPM and other audio features, caching results for future use
 
 #### Playlist Output & Integration
 - **FR-016**: System MUST generate playlists in M3U format compatible with existing AzuraCast sync workflow
@@ -201,7 +207,7 @@ As a Production City Radio programming director, I need the playlist generator t
 - [x] All mandatory sections completed
 
 ### Requirement Completeness
-- [ ] No [NEEDS CLARIFICATION] markers remain (FR-022 has acceptable variance clarification needed)
+- [x] No [NEEDS CLARIFICATION] markers remain (all clarified in Session 2025-10-06)
 - [x] Requirements are testable and unambiguous (can validate against station-identity.md)
 - [x] Success criteria are measurable (BPM ranges, genre percentages, Australian content %)
 - [x] Scope is clearly bounded (refactor playlist generation to use AI/ML with station identity)
@@ -214,11 +220,11 @@ As a Production City Radio programming director, I need the playlist generator t
 
 - [x] User description parsed
 - [x] Key concepts extracted (AI/ML integration, station identity context, daypart programming)
-- [x] Ambiguities marked (FR-022 variance tolerance)
+- [x] Ambiguities marked (all clarified in Session 2025-10-06)
 - [x] User scenarios defined (5 scenarios with Production City Radio examples)
-- [x] Requirements generated (27 functional requirements)
+- [x] Requirements generated (31 functional requirements including clarifications)
 - [x] Entities identified (8 key entities)
-- [ ] Review checklist passed (pending FR-022 clarification)
+- [x] Review checklist passed (all clarifications resolved)
 
 ---
 
@@ -228,8 +234,8 @@ As a Production City Radio programming director, I need the playlist generator t
 
 2. **Live Testing Environment**: Testing will be conducted against actual Subsonic/Emby endpoints using credentials from environment variables (SUBSONIC_URL, SUBSONIC_USER, SUBSONIC_PASSWORD). Ensure test suite can validate against real music library data.
 
-3. **Station Identity as Programming Source**: The station-identity.md file becomes the single source of truth for programming rules. All daypart specifications, rotation strategies, and compliance requirements should be extracted from this document rather than hardcoded.
+3. **Station Identity as Programming Source**: The station-identity.md file becomes the single source of truth for programming rules. File locking must be implemented to prevent concurrent modifications during generation (FR-031).
 
-4. **Cost Management**: AI/ML usage requires cost controls. Implement per-playlist and total budget limits with tracking and reporting of LLM API costs.
+4. **Cost Management**: AI/ML usage requires configurable cost controls via environment variables - budget mode (hard/suggested, default: suggested) and allocation strategy (dynamic/equal, default: dynamic). See FR-009 and FR-030.
 
-5. **Clarification Needed**: FR-022 requires decision on acceptable variance for genre distribution percentages (recommend ±5% tolerance to allow AI/ML flexibility while maintaining compliance).
+5. **Metadata Enhancement**: System must retrieve missing track metadata from Last.fm API with permanent caching, falling back to aubio-tools audio analysis when Last.fm data unavailable (FR-029). Ensure aubio-tools is available in deployment environment.

@@ -13,7 +13,8 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
-from .models import DecisionLog
+from decimal import Decimal
+from .models.core import DecisionLog, DecisionType
 
 
 class DecisionLogger:
@@ -85,19 +86,45 @@ class DecisionLogger:
 
             playlist_id = str(uuid.uuid4())
 
-        # Create DecisionLog instance (validates all fields)
+        # Map string decision_type to DecisionType enum
+        decision_type_map = {
+            "track_selection": DecisionType.TRACK_SELECTION,
+            "constraint_relaxation": DecisionType.RELAXATION,
+            "validation": DecisionType.VALIDATION,
+            "sync": DecisionType.METADATA_RETRIEVAL,
+            "error": DecisionType.ERROR
+        }
+
+        dt_enum = decision_type_map.get(decision_type.lower())
+        if not dt_enum:
+            raise ValueError(f"Invalid decision_type: {decision_type}")
+
+        # Extract cost and execution time from metadata
+        cost = Decimal(metadata.get("llm_cost", "0.00")) if metadata else Decimal("0.00")
+        execution_time = int(metadata.get("execution_time_ms", 0)) if metadata else 0
+
+        # Build decision_data from all the provided data
+        decision_data = {
+            "playlist_name": playlist_name,
+            "criteria": criteria,
+            "selected_tracks": selected_tracks,
+            "validation_result": validation_result,
+            "metadata": metadata or {}
+        }
+
+        # Create DecisionLog instance using proper signature
         decision_log = DecisionLog(
-            decision_type=decision_type,
+            id=str(__import__('uuid').uuid4()),
             playlist_id=playlist_id,
-            playlist_name=playlist_name,
-            criteria=criteria,
-            selected_tracks=selected_tracks,
-            validation_result=validation_result,
-            metadata=metadata or {},
+            decision_type=dt_enum,
+            timestamp=datetime.now(),
+            decision_data=decision_data,
+            cost_incurred=cost,
+            execution_time_ms=execution_time
         )
 
-        # Serialize to JSON (one line)
-        json_line = decision_log.to_json()
+        # Serialize to JSON (one line) using to_dict()
+        json_line = json.dumps(decision_log.to_dict())
 
         # Append to JSONL file (append-only, never rotate)
         with open(self.log_file, "a", encoding="utf-8") as f:
@@ -140,7 +167,35 @@ class DecisionLogger:
                     continue
 
                 try:
-                    decision = DecisionLog.from_json(line)
+                    # Parse JSON and reconstruct DecisionLog
+                    data = json.loads(line)
+
+                    # Map string decision_type back to enum
+                    decision_type_str = data.get("decision_type", "")
+                    decision_type_map = {
+                        "track_selection": DecisionType.TRACK_SELECTION,
+                        "relaxation": DecisionType.RELAXATION,
+                        "validation": DecisionType.VALIDATION,
+                        "metadata_retrieval": DecisionType.METADATA_RETRIEVAL,
+                        "error": DecisionType.ERROR
+                    }
+                    dt_enum = decision_type_map.get(decision_type_str.lower())
+                    if not dt_enum:
+                        raise ValueError(f"Invalid decision_type in log: {decision_type_str}")
+
+                    # Parse timestamp
+                    timestamp = datetime.fromisoformat(data.get("timestamp", datetime.now().isoformat()))
+
+                    # Reconstruct DecisionLog
+                    decision = DecisionLog(
+                        id=data.get("id", ""),
+                        playlist_id=data.get("playlist_id", ""),
+                        decision_type=dt_enum,
+                        timestamp=timestamp,
+                        decision_data=data.get("decision_data", {}),
+                        cost_incurred=Decimal(data.get("cost_incurred", "0.00")),
+                        execution_time_ms=int(data.get("execution_time_ms", 0))
+                    )
                     decisions.append(decision)
                 except (json.JSONDecodeError, ValueError) as e:
                     raise ValueError(f"Invalid decision log entry at line {line_num}: {e}") from e

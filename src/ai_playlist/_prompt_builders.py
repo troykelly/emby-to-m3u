@@ -20,21 +20,32 @@ def build_selection_prompt(request: LLMTrackSelectionRequest) -> str:
 
     # Build genre requirements string
     genre_requirements = "\n".join(
-        f"- {genre}: {min_pct:.0%}-{max_pct:.0%}"
-        for genre, (min_pct, max_pct) in criteria.genre_mix.items()
+        f"- {genre}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        for genre, criteria_obj in criteria.genre_mix.items()
     )
 
     # Build era requirements string
     era_requirements = "\n".join(
-        f"- {era}: {min_pct:.0%}-{max_pct:.0%}"
-        for era, (min_pct, max_pct) in criteria.era_distribution.items()
+        f"- {era}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        for era, criteria_obj in criteria.era_distribution.items()
     )
+
+    # Get BPM range from bpm_ranges
+    if criteria.bpm_ranges:
+        bpm_min = min(r.bpm_min for r in criteria.bpm_ranges)
+        bpm_max = max(r.bpm_max for r in criteria.bpm_ranges)
+        bpm_range_str = f"{bpm_min}-{bpm_max} BPM"
+    else:
+        bpm_range_str = "No BPM constraints"
+
+    # Get energy flow
+    energy_flow = ", ".join(criteria.energy_flow_requirements) if criteria.energy_flow_requirements else "Natural flow"
 
     prompt = f"""Select tracks for a radio playlist matching these criteria:
 
 **BPM Requirements:**
-- Range: {criteria.bpm_range[0]}-{criteria.bpm_range[1]} BPM
-- Progression: {criteria.energy_flow}
+- Range: {bpm_range_str}
+- Progression: {energy_flow}
 
 **Genre Mix:**
 {genre_requirements}
@@ -43,7 +54,7 @@ def build_selection_prompt(request: LLMTrackSelectionRequest) -> str:
 {era_requirements}
 
 **Australian Content:**
-- Minimum: {criteria.australian_min:.0%} of tracks MUST be from Australian artists
+- Minimum: {criteria.australian_content_min:.0%} of tracks MUST be from Australian artists
 
 **Target:**
 - {request.target_track_count} tracks
@@ -80,21 +91,21 @@ def build_relaxation_prompt(criteria: TrackSelectionCriteria, iteration: int) ->
 
     # Build genre requirements
     genre_requirements = "\n".join(
-        f"- {genre}: {min_pct:.0%}-{max_pct:.0%}"
-        for genre, (min_pct, max_pct) in criteria.genre_mix.items()
+        f"- {genre}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        for genre, criteria_obj in criteria.genre_mix.items()
     )
 
     # Build era requirements
     era_requirements = "\n".join(
-        f"- {era}: {min_pct:.0%}-{max_pct:.0%}"
-        for era, (min_pct, max_pct) in criteria.era_distribution.items()
+        f"- {era}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        for era, criteria_obj in criteria.era_distribution.items()
     )
 
     prompt = f"""Select tracks for a radio playlist {relaxation_note}:
 
 **BPM Requirements:**
-- Range: {criteria.bpm_range[0]}-{criteria.bpm_range[1]} BPM
-- Progression: {criteria.energy_flow}
+- Range: {bpm_range_str}
+- Tolerance: ±{tolerance} BPM
 
 **Genre Mix:**
 {genre_requirements}
@@ -103,7 +114,7 @@ def build_relaxation_prompt(criteria: TrackSelectionCriteria, iteration: int) ->
 {era_requirements}
 
 **Australian Content (NON-NEGOTIABLE):**
-- Minimum: {criteria.australian_min:.0%} of tracks MUST be from Australian artists
+- Minimum: {criteria.australian_content_min:.0%} of tracks MUST be from Australian artists
 
 **Target:**
 - 12 tracks

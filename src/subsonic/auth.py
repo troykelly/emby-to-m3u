@@ -116,9 +116,7 @@ def generate_token(
     )
 
 
-def verify_token(
-    config: SubsonicConfig, token: str, salt: str
-) -> bool:
+def verify_token(config: SubsonicConfig, token: str, salt: str) -> bool:
     """Verify that a token matches the expected MD5(password + salt).
 
     This is primarily used for testing and validation. In production,
@@ -144,9 +142,7 @@ def verify_token(
         >>> verify_token(config, "invalid", auth.salt)
         False
     """
-    expected_token = hashlib.md5(
-        f"{config.password}{salt}".encode("utf-8")
-    ).hexdigest()
+    expected_token = hashlib.md5(f"{config.password}{salt}".encode("utf-8")).hexdigest()
     return token == expected_token
 
 

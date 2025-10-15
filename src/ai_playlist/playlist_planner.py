@@ -6,11 +6,11 @@ with calculated durations, naming schema, and track selection criteria.
 """
 
 from typing import List
-from datetime import datetime, time
+from datetime import datetime, time, date
 import uuid
 import re
 
-from .models import DaypartSpec, PlaylistSpec, TrackSelectionCriteria
+from .models import DaypartSpec, PlaylistSpec, TrackSelectionCriteria, GenreCriteria, EraCriteria, BPMRange
 
 
 def generate_playlist_specs(dayparts: List[DaypartSpec]) -> List[PlaylistSpec]:
@@ -44,13 +44,18 @@ def generate_playlist_specs(dayparts: List[DaypartSpec]) -> List[PlaylistSpec]:
         # Generate track selection criteria from daypart constraints
         track_criteria = _generate_track_criteria(daypart)
 
-        # Create playlist spec
+        # Calculate target track count from duration and tracks per hour
+        min_tracks, max_tracks = _calculate_track_count(daypart, target_duration)
+
+        # Create playlist spec using correct signature
         playlist_spec = PlaylistSpec(
             id=playlist_id,
             name=playlist_name,
-            daypart=daypart,
-            target_duration_minutes=target_duration,
-            track_criteria=track_criteria,
+            source_daypart_id=daypart.id if hasattr(daypart, 'id') else playlist_id,
+            generation_date=date.today(),
+            target_track_count_min=min_tracks,
+            target_track_count_max=max_tracks,
+            track_selection_criteria=track_criteria,
             created_at=datetime.now(),
         )
 
@@ -110,6 +115,32 @@ def _to_camel_case(text: str) -> str:
     return camel_case
 
 
+def _calculate_track_count(daypart: DaypartSpec, duration_minutes: int) -> tuple[int, int]:
+    """
+    Calculate target track count from daypart and duration.
+
+    Args:
+        daypart: Daypart specification with tracks_per_hour tuple
+        duration_minutes: Duration in minutes
+
+    Returns:
+        Tuple of (min_tracks, max_tracks)
+    """
+    duration_hours = duration_minutes / 60.0
+
+    # If daypart has tracks_per_hour, use it
+    if hasattr(daypart, 'tracks_per_hour'):
+        min_per_hour, max_per_hour = daypart.tracks_per_hour
+        min_tracks = int(duration_hours * min_per_hour)
+        max_tracks = int(duration_hours * max_per_hour)
+    else:
+        # Default to 12-15 tracks per hour
+        min_tracks = int(duration_hours * 12)
+        max_tracks = int(duration_hours * 15)
+
+    return (min_tracks, max_tracks)
+
+
 def _calculate_duration_minutes(time_range: tuple[str, str]) -> int:
     """
     Calculate duration in minutes from time range.
@@ -145,10 +176,9 @@ def _generate_track_criteria(daypart: DaypartSpec) -> TrackSelectionCriteria:
     Generate track selection criteria from daypart constraints.
 
     Converts daypart specifications into criteria suitable for LLM track selection:
-    - Genre percentages -> (min%, max%) ranges with ±5% tolerance
-    - Era distributions -> (min%, max%) ranges with ±5% tolerance
-    - BPM progression -> single range for the entire daypart
-    - Sets BPM tolerance to 10
+    - Genre percentages -> GenreCriteria objects with ±10% tolerance
+    - Era distributions -> EraCriteria objects with year ranges and ±10% tolerance
+    - BPM progression -> List of BPMRange objects
     - Preserves Australian minimum requirement
     - Copies energy flow from daypart mood
 
@@ -158,40 +188,108 @@ def _generate_track_criteria(daypart: DaypartSpec) -> TrackSelectionCriteria:
     Returns:
         Track selection criteria ready for LLM
     """
-    # Extract BPM range from progression (use overall min and max)
-    bpm_values = []
-    for bpm_min, bpm_max in daypart.bpm_progression.values():
-        bpm_values.extend([bpm_min, bpm_max])
+    # Convert BPM progression to list of BPMRange objects
+    bpm_ranges: List[BPMRange] = []
 
-    overall_bpm_min = min(bpm_values)
-    overall_bpm_max = max(bpm_values)
-    bpm_range = (overall_bpm_min, overall_bpm_max)
+    if hasattr(daypart, 'bpm_progression') and isinstance(daypart.bpm_progression, list):
+        # If already a list of BPMRange objects
+        bpm_ranges = daypart.bpm_progression
+    elif hasattr(daypart, 'bpm_progression') and isinstance(daypart.bpm_progression, dict):
+        # Convert dict format to BPMRange list
+        for time_label, (bpm_min, bpm_max) in daypart.bpm_progression.items():
+            # Parse time from label or use defaults
+            if isinstance(time_label, str) and '-' in time_label:
+                start_str, end_str = time_label.split('-')
+                start_time = time.fromisoformat(start_str.strip())
+                end_time = time.fromisoformat(end_str.strip())
+            else:
+                # Default to full daypart range
+                start_time = daypart.time_start if hasattr(daypart, 'time_start') else time(0, 0)
+                end_time = daypart.time_end if hasattr(daypart, 'time_end') else time(23, 59)
 
-    # Convert genre_mix percentages to (min%, max%) ranges with ±5% tolerance
-    genre_mix_ranges = {}
-    for genre, percentage in daypart.genre_mix.items():
-        min_pct = max(0.0, percentage - 0.05)  # ±5% tolerance
-        max_pct = min(1.0, percentage + 0.05)
-        genre_mix_ranges[genre] = (min_pct, max_pct)
+            bpm_ranges.append(BPMRange(
+                time_start=start_time,
+                time_end=end_time,
+                bpm_min=bpm_min,
+                bpm_max=bpm_max
+            ))
 
-    # Convert era_distribution to (min%, max%) ranges with ±5% tolerance
-    era_distribution_ranges = {}
-    for era, percentage in daypart.era_distribution.items():
-        min_pct = max(0.0, percentage - 0.05)  # ±5% tolerance
-        max_pct = min(1.0, percentage + 0.05)
-        era_distribution_ranges[era] = (min_pct, max_pct)
+    # Convert genre_mix to GenreCriteria objects
+    genre_mix: dict[str, GenreCriteria] = {}
+    if hasattr(daypart, 'genre_mix'):
+        for genre, percentage in daypart.genre_mix.items():
+            genre_mix[genre] = GenreCriteria(
+                target_percentage=percentage,
+                tolerance=0.10  # ±10% tolerance
+            )
 
-    # Create criteria
+    # Convert era_distribution to EraCriteria objects
+    era_distribution: dict[str, EraCriteria] = {}
+    current_year = datetime.now().year
+
+    # Define era year ranges
+    era_mapping = {
+        "Current": (current_year - 2, current_year),
+        "Recent": (current_year - 5, current_year - 2),
+        "Modern Classics": (current_year - 10, current_year - 5),
+        "Throwbacks": (current_year - 20, current_year - 10),
+    }
+
+    if hasattr(daypart, 'era_distribution'):
+        for era, percentage in daypart.era_distribution.items():
+            if era in era_mapping:
+                min_year, max_year = era_mapping[era]
+                era_distribution[era] = EraCriteria(
+                    era_name=era,
+                    min_year=min_year,
+                    max_year=max_year,
+                    target_percentage=percentage,
+                    tolerance=0.10  # ±10% tolerance
+                )
+
+    # Extract Australian minimum
+    australian_min = 0.30  # Default
+    if hasattr(daypart, 'australian_min'):
+        australian_min = daypart.australian_min
+
+    # Extract energy flow from mood
+    energy_flow = []
+    if hasattr(daypart, 'mood'):
+        if isinstance(daypart.mood, str):
+            energy_flow = [daypart.mood]
+        elif isinstance(daypart.mood, list):
+            energy_flow = daypart.mood
+    elif hasattr(daypart, 'mood_guidelines'):
+        energy_flow = daypart.mood_guidelines
+
+    # Extract rotation distribution
+    rotation_dist = {}
+    if hasattr(daypart, 'rotation_percentages'):
+        rotation_dist = daypart.rotation_percentages
+
+    # Calculate no-repeat window from duration
+    no_repeat_hours = daypart.duration_hours if hasattr(daypart, 'duration_hours') else 4.0
+
+    # Extract mood exclusions
+    mood_exclude = []
+    if hasattr(daypart, 'mood_exclusions'):
+        mood_exclude = daypart.mood_exclusions
+
+    # Create criteria with correct signature
     criteria = TrackSelectionCriteria(
-        bpm_range=bpm_range,
-        bpm_tolerance=10,  # Set to 10 as specified
-        genre_mix=genre_mix_ranges,
-        genre_tolerance=0.05,  # Default 5%
-        era_distribution=era_distribution_ranges,
-        era_tolerance=0.05,  # Default 5%
-        australian_min=daypart.australian_min,  # Preserve from daypart
-        energy_flow=daypart.mood,  # Copy mood as energy flow
-        excluded_track_ids=[],  # Start with empty exclusion list
+        bpm_ranges=bpm_ranges,
+        genre_mix=genre_mix,
+        era_distribution=era_distribution,
+        australian_content_min=australian_min,
+        energy_flow_requirements=energy_flow,
+        rotation_distribution=rotation_dist,
+        no_repeat_window_hours=no_repeat_hours,
+        tolerance_bpm=10,
+        tolerance_genre_percent=0.10,
+        tolerance_era_percent=0.10,
+        mood_filters_include=[],
+        mood_filters_exclude=mood_exclude,
+        specialty_constraints=daypart.specialty_constraints if hasattr(daypart, 'specialty_constraints') else None
     )
 
     return criteria

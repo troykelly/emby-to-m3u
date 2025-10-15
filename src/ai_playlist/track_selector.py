@@ -312,8 +312,12 @@ def _parse_llm_response(content: str) -> List[SelectedTrack]:
                 year=track_data.get("year"),
                 country=track_data.get("country"),
                 duration_seconds=track_data.get("duration_seconds", 0),
-                position=i + 1,
-                selection_reason=track_data.get("selection_reason", ""),
+                is_australian=track_data.get("is_australian", False),
+                rotation_category=track_data.get("rotation_category", "C"),
+                position_in_playlist=i + 1,
+                selection_reasoning=track_data.get("selection_reason", ""),
+                validation_status=track_data.get("validation_status", "pending"),
+                metadata_source=track_data.get("metadata_source", "subsonic"),
             )
             selected_tracks.append(selected_track)
 
@@ -379,7 +383,9 @@ def _validate_constraint_satisfaction(
                 genre_counts[track.genre] = genre_counts.get(track.genre, 0) + 1
 
         genre_scores = []
-        for genre, (min_pct, max_pct) in criteria.genre_mix.items():
+        for genre, criteria_obj in criteria.genre_mix.items():
+            min_pct = criteria_obj.min_percentage
+            max_pct = criteria_obj.max_percentage
             actual_pct = genre_counts.get(genre, 0) / len(tracks)
             if min_pct <= actual_pct <= max_pct:
                 genre_scores.append(1.0)

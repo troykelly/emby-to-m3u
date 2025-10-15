@@ -76,29 +76,76 @@ def validate_playlist(
     # Determine if validation passes
     passes_validation = constraint_satisfaction >= 0.80 and flow_quality_score >= 0.70
 
-    # Build ValidationResult with nested dataclasses
-    from .models.validation import ConstraintScores, FlowMetrics
+    # Build ValidationResult with new API
+    from .models.validation import ConstraintScore, FlowQualityMetrics, ValidationStatus
 
-    constraint_scores = ConstraintScores(
-        constraint_satisfaction=constraint_satisfaction,
-        bpm_satisfaction=bpm_satisfaction,
-        genre_satisfaction=genre_satisfaction,
-        era_satisfaction=era_satisfaction,
-        australian_content=australian_content,
-    )
+    # Convert legacy satisfaction scores to ConstraintScore objects
+    constraint_score_dict = {
+        'bpm_satisfaction': ConstraintScore(
+            constraint_name="BPM Range",
+            target_value=1.0,
+            actual_value=bpm_satisfaction,
+            tolerance=0.0,
+            is_compliant=bpm_satisfaction >= 0.80,
+            deviation_percentage=abs(1.0 - bpm_satisfaction)
+        ),
+        'genre_satisfaction': ConstraintScore(
+            constraint_name="Genre Mix",
+            target_value=1.0,
+            actual_value=genre_satisfaction,
+            tolerance=0.0,
+            is_compliant=genre_satisfaction >= 0.80,
+            deviation_percentage=abs(1.0 - genre_satisfaction)
+        ),
+        'era_satisfaction': ConstraintScore(
+            constraint_name="Era Distribution",
+            target_value=1.0,
+            actual_value=era_satisfaction,
+            tolerance=0.0,
+            is_compliant=era_satisfaction >= 0.80,
+            deviation_percentage=abs(1.0 - era_satisfaction)
+        ),
+        'australian_content': ConstraintScore(
+            constraint_name="Australian Content",
+            target_value=criteria.australian_content_min,
+            actual_value=australian_content,
+            tolerance=0.0,
+            is_compliant=australian_content >= criteria.australian_content_min,
+            deviation_percentage=abs(criteria.australian_content_min - australian_content) / criteria.australian_content_min if criteria.australian_content_min > 0 else 0.0
+        ),
+    }
 
-    flow_metrics = FlowMetrics(
-        flow_quality_score=flow_quality_score,
+    # Convert legacy flow metrics to FlowQualityMetrics
+    flow_quality_metrics_obj = FlowQualityMetrics(
         bpm_variance=bpm_variance,
-        energy_progression=energy_progression,
-        genre_diversity=genre_diversity,
+        bpm_progression_coherence=flow_quality_score,  # Using flow_quality_score as coherence
+        energy_consistency=0.85 if energy_progression == "smooth" else 0.5 if energy_progression == "moderate" else 0.3,
+        genre_diversity_index=genre_diversity
     )
+
+    # Convert gap_analysis dict to list of strings
+    gap_analysis_list = [f"{key}: {value}" for key, value in gap_analysis.items()]
+
+    # Calculate overall compliance percentage
+    compliant_count = sum(1 for score in constraint_score_dict.values() if score.is_compliant)
+    compliance_pct = compliant_count / len(constraint_score_dict)
+
+    # Determine overall status
+    if passes_validation:
+        overall_status = ValidationStatus.PASS
+    elif compliance_pct >= 0.50:
+        overall_status = ValidationStatus.WARNING
+    else:
+        overall_status = ValidationStatus.FAIL
 
     return ValidationResult(
-        constraint_scores=constraint_scores,
-        flow_metrics=flow_metrics,
-        gap_analysis=gap_analysis,
-        passes_validation=passes_validation,
+        playlist_id="generated_playlist",  # Default ID for generated playlists
+        overall_status=overall_status,
+        constraint_scores=constraint_score_dict,
+        flow_quality_metrics=flow_quality_metrics_obj,
+        compliance_percentage=compliance_pct,
+        validated_at=datetime.now(),
+        gap_analysis=gap_analysis_list,
     )
 
 
@@ -109,7 +156,12 @@ def _calculate_bpm_satisfaction(
 
     Formula: tracks_in_range / total_tracks
     """
-    bpm_min, bpm_max = criteria.bpm_range
+    # Get overall BPM range from all BPM ranges in criteria
+    if not criteria.bpm_ranges:
+        return 1.0  # No BPM requirements
+
+    bpm_min = min(r.bpm_min for r in criteria.bpm_ranges)
+    bpm_max = max(r.bpm_max for r in criteria.bpm_ranges)
 
     in_range_count = sum(
         1 for track in tracks if track.bpm is not None and bpm_min <= track.bpm <= bpm_max
@@ -133,12 +185,14 @@ def _calculate_genre_satisfaction(
     total_tracks = len(tracks)
     genre_matches = 0
 
-    for genre, (min_pct, max_pct) in criteria.genre_mix.items():
+    for genre, criteria_obj in criteria.genre_mix.items():
         # Count tracks in this genre
         genre_count = sum(1 for track in tracks if track.genre == genre)
         actual_pct = genre_count / total_tracks
 
         # Check if within required range
+        min_pct = criteria_obj.min_percentage
+        max_pct = criteria_obj.max_percentage
         if min_pct <= actual_pct <= max_pct:
             genre_matches += 1
 
@@ -183,9 +237,11 @@ def _calculate_era_satisfaction(
             era_counts["Classic"] += 1
 
     # Check each required era
-    for era, (min_pct, max_pct) in criteria.era_distribution.items():
+    for era, criteria_obj in criteria.era_distribution.items():
         actual_pct = era_counts.get(era, 0) / total_tracks
 
+        min_pct = criteria_obj.min_percentage
+        max_pct = criteria_obj.max_percentage
         if min_pct <= actual_pct <= max_pct:
             era_matches += 1
 
@@ -197,17 +253,17 @@ def _calculate_australian_satisfaction(
 ) -> float:
     """Calculate Australian content satisfaction.
 
-    Formula: min(australian_content / australian_min, 1.0)
+    Formula: min(australian_content / australian_content_min, 1.0)
 
     Returns 1.0 if requirement is met or exceeded, proportional value if not.
     """
     australian_content = _calculate_australian_content(tracks)
 
-    if criteria.australian_min == 0:
+    if criteria.australian_content_min == 0:
         return 1.0  # No Australian content requirement
 
     # Satisfaction is ratio of actual to required, capped at 1.0
-    return min(australian_content / criteria.australian_min, 1.0)
+    return min(australian_content / criteria.australian_content_min, 1.0)
 
 
 def _calculate_australian_content(tracks: List[SelectedTrack]) -> float:
@@ -312,8 +368,9 @@ def _generate_gap_analysis(
     gap_analysis: Dict[str, str] = {}
 
     # Check BPM range
-    if bpm_satisfaction < 1.0:
-        bpm_min, bpm_max = criteria.bpm_range
+    if bpm_satisfaction < 1.0 and criteria.bpm_ranges:
+        bpm_min = min(r.bpm_min for r in criteria.bpm_ranges)
+        bpm_max = max(r.bpm_max for r in criteria.bpm_ranges)
         out_of_range = [
             f"{track.title} ({track.bpm} BPM)"
             for track in tracks
@@ -329,10 +386,12 @@ def _generate_gap_analysis(
         genre_issues = []
         total_tracks = len(tracks)
 
-        for genre, (min_pct, max_pct) in criteria.genre_mix.items():
+        for genre, criteria_obj in criteria.genre_mix.items():
             genre_count = sum(1 for track in tracks if track.genre == genre)
             actual_pct = genre_count / total_tracks
 
+            min_pct = criteria_obj.min_percentage
+            max_pct = criteria_obj.max_percentage
             if not min_pct <= actual_pct <= max_pct:
                 genre_issues.append(
                     f"{genre} {actual_pct*100:.0f}% "
@@ -357,9 +416,11 @@ def _generate_gap_analysis(
             "Classic": sum(1 for t in tracks if t.year and t.year < current_year - 10),
         }
 
-        for era, (min_pct, max_pct) in criteria.era_distribution.items():
+        for era, criteria_obj in criteria.era_distribution.items():
             actual_pct = era_counts.get(era, 0) / total_tracks
 
+            min_pct = criteria_obj.min_percentage
+            max_pct = criteria_obj.max_percentage
             if not min_pct <= actual_pct <= max_pct:
                 era_issues.append(
                     f"{era} era {actual_pct*100:.0f}% "
@@ -370,10 +431,10 @@ def _generate_gap_analysis(
             gap_analysis["era_distribution"] = ", ".join(era_issues)
 
     # Check Australian content
-    if australian_content < criteria.australian_min:
+    if australian_content < criteria.australian_content_min:
         gap_analysis["australian_content"] = (
             f"Australian content {australian_content*100:.0f}% "
-            f"(minimum: {criteria.australian_min*100:.0f}%)"
+            f"(minimum: {criteria.australian_content_min*100:.0f}%)"
         )
 
     return gap_analysis

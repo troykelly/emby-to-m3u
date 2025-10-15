@@ -31,4 +31,5 @@ pytest-mock==3.15.0
 pytest-cov==5.0.0
 pytest-asyncio==0.25.2
 openai>=1.0.0
+tiktoken
 aiohttp>=3.9.0

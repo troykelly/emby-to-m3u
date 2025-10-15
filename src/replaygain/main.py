@@ -13,6 +13,7 @@ from src.logger import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, float, dict]:
     """Calculate ReplayGain values for an audio file using ffmpeg with loudnorm filter.
 
@@ -27,22 +28,28 @@ def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, f
         RuntimeError: If ReplayGain calculation fails or could not be parsed.
     """
     command = [
-        'ffmpeg',
-        '-hide_banner',
-        '-i', 'pipe:0',
-        '-af', 'loudnorm=I=-23:LRA=7:TP=-2:print_format=json',
-        '-f', 'null', '-'
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        "pipe:0",
+        "-af",
+        "loudnorm=I=-23:LRA=7:TP=-2:print_format=json",
+        "-f",
+        "null",
+        "-",
     ]
 
     with Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE) as process:
         out, err = process.communicate(input=file_like.getvalue())
 
     if process.returncode != 0:
-        logger.error(f"ffmpeg command failed with error {process.returncode}: {err.decode('utf-8')}")
+        logger.error(
+            f"ffmpeg command failed with error {process.returncode}: {err.decode('utf-8')}"
+        )
         raise CalledProcessError(process.returncode, command, output=out, stderr=err)
 
-    json_output, json_lines = '', False
-    for line in err.decode('utf-8').splitlines():
+    json_output, json_lines = "", False
+    for line in err.decode("utf-8").splitlines():
         line = line.strip()
         if line == "{":
             json_output += line
@@ -58,8 +65,8 @@ def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, f
 
     parsed_data = json.loads(json_output)
 
-    gain = float(parsed_data.get('input_i', 'nan'))
-    peak = float(parsed_data.get('input_tp', 'nan'))
+    gain = float(parsed_data.get("input_i", "nan"))
+    peak = float(parsed_data.get("input_tp", "nan"))
 
     if isnan(gain) or isnan(peak):
         logger.error(f"Invalid gain or peak values found: gain={gain}, peak={peak}")
@@ -67,16 +74,16 @@ def calculate_replaygain(file_like: BytesIO, file_format: str) -> Tuple[float, f
 
     return gain, peak, parsed_data
 
+
 def ffmpeg_process(input_bytes, cmd):
     # Start the FFmpeg process
-    proc = Popen(
-        cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE
-    )
+    proc = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     # Pass the input data and get the output
     output, error = proc.communicate(input=input_bytes)
     if proc.returncode != 0:
-        raise Exception("FFmpeg error: " + error.decode('utf-8'))
+        raise Exception("FFmpeg error: " + error.decode("utf-8"))
     return BytesIO(output)
+
 
 def apply_replaygain(
     file_like: BytesIO,
@@ -107,33 +114,42 @@ def apply_replaygain(
     logger.debug("Starting to apply ReplayGain and other loudness metadata...")
 
     metadata_cmd = [
-        '-metadata', f'replaygain_track_gain={gain} dB',
-        '-metadata', f'replaygain_track_peak={peak}'
+        "-metadata",
+        f"replaygain_track_gain={gain} dB",
+        "-metadata",
+        f"replaygain_track_peak={peak}",
     ]
 
     if r128_track_gain is not None:
-        metadata_cmd.extend(['-metadata', f'R128_TRACK_GAIN={r128_track_gain}'])
+        metadata_cmd.extend(["-metadata", f"R128_TRACK_GAIN={r128_track_gain}"])
 
     if r128_album_gain is not None:
-        metadata_cmd.extend(['-metadata', f'R128_ALBUM_GAIN={r128_album_gain}'])
+        metadata_cmd.extend(["-metadata", f"R128_ALBUM_GAIN={r128_album_gain}"])
 
     if loudness_metadata:
         for key, value in loudness_metadata.items():
-            metadata_cmd.extend(['-metadata', f'{key}={value}'])
+            metadata_cmd.extend(["-metadata", f"{key}={value}"])
 
     extra_opts = []
-    if file_format.lower() == 'mp3':
-        extra_opts = ['-id3v2_version', '3', '-write_id3v1', '1']
+    if file_format.lower() == "mp3":
+        extra_opts = ["-id3v2_version", "3", "-write_id3v1", "1"]
 
-    command = [
-        'ffmpeg', '-hide_banner', '-y',
-        '-i', '-',  
-        '-c', 'copy',  
-        '-map_metadata', '0',
-    ] + extra_opts + metadata_cmd + [
-        '-f', file_format, 
-        '-'
-    ]
+    command = (
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-y",
+            "-i",
+            "-",
+            "-c",
+            "copy",
+            "-map_metadata",
+            "0",
+        ]
+        + extra_opts
+        + metadata_cmd
+        + ["-f", file_format, "-"]
+    )
 
     with Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE) as process:
         output, error = process.communicate(input=file_like.getvalue())
@@ -143,6 +159,7 @@ def apply_replaygain(
         raise Exception(f"FFmpeg error: {error.decode()}")
 
     return output
+
 
 def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     """Process ReplayGain for a given audio file content.
@@ -157,20 +174,28 @@ def process_replaygain(file_content: bytes, file_format: str) -> bytes:
     file_like = BytesIO(file_content)
 
     gain, peak, loudness_metadata = calculate_replaygain(file_like, file_format)
-    r128_track_gain = int((gain - 1.0) * 256) if 'R128_TRACK_GAIN' not in loudness_metadata else int(loudness_metadata['R128_TRACK_GAIN'])
+    r128_track_gain = (
+        int((gain - 1.0) * 256)
+        if "R128_TRACK_GAIN" not in loudness_metadata
+        else int(loudness_metadata["R128_TRACK_GAIN"])
+    )
     r128_album_gain = 0
 
     updated_content = apply_replaygain(
-        file_like, gain, peak, file_format,
+        file_like,
+        gain,
+        peak,
+        file_format,
         r128_track_gain=r128_track_gain,
         r128_album_gain=r128_album_gain,
-        loudness_metadata=loudness_metadata
+        loudness_metadata=loudness_metadata,
     )
 
     final_size = len(updated_content)
     logger.debug(f"Final post-replaygain file size: {final_size} bytes")
 
     return updated_content
+
 
 def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     """Check if the file content has ReplayGain metadata.
@@ -185,6 +210,7 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     content.seek(0)
     try:
         from mutagen import File as MutagenFile
+
         audio_file = MutagenFile(content, easy=True)
     except Exception as e:
         logger.error(f"Error reading file with Mutagen: {e}")
@@ -205,7 +231,7 @@ def has_replaygain_metadata(content: BytesIO, file_format: str) -> bool:
     metadata_keys = {
         "mp3": ["replaygain_track_gain", "replaygain_track_peak"],
         "flac": ["replaygain_track_gain", "replaygain_track_peak"],
-        "opus": ["R128_TRACK_GAIN", "R128_ALBUM_GAIN"]
+        "opus": ["R128_TRACK_GAIN", "R128_ALBUM_GAIN"],
     }.get(file_format.lower(), [])
 
     return log_replaygain_metadata(audio_file, metadata_keys)

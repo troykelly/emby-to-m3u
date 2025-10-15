@@ -359,7 +359,7 @@ class TestRealServerIntegration:
 
     These tests require:
     - SUBSONIC_URL=https://music.mctk.co
-    - SUBSONIC_USERNAME (from .env)
+    - SUBSONIC_USER (from .env)
     - SUBSONIC_PASSWORD (from .env)
 
     Run with: pytest -m integration tests/test_subsonic_auth.py
@@ -379,7 +379,7 @@ class TestRealServerIntegration:
             pass
 
         url = os.getenv("SUBSONIC_URL", "https://music.mctk.co")
-        username = os.getenv("SUBSONIC_USER") or os.getenv("SUBSONIC_USERNAME")
+        username = os.getenv("SUBSONIC_USER") or os.getenv("SUBSONIC_USER")
         password = os.getenv("SUBSONIC_PASSWORD")
 
         if not username or not password:
