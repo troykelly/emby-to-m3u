@@ -102,7 +102,6 @@ class TestBatchPlaylistGeneration:
         """Create sample playlist specifications."""
         daypart = DaypartSpec(
             name="Morning Drive",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-10:00": (90, 130)},
             genre_mix={"Rock": 0.50, "Electronic": 0.30, "Pop": 0.20},
@@ -317,7 +316,6 @@ class TestBudgetAllocation:
         """Helper to create playlist spec with specific track count."""
         daypart = DaypartSpec(
             name="Test Daypart",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-10:00": (90, 130)},
             genre_mix={"Rock": 1.0},
@@ -467,7 +465,6 @@ class TestMultiDaypartCoordination:
         duration_hours = end_hour - start_hour
         daypart = DaypartSpec(
             name=name,
-            day="Monday",
             time_range=(f"{start_hour:02d}:00", f"{end_hour:02d}:00"),
             bpm_progression={f"{start_hour:02d}:00-{end_hour:02d}:00": (90, 130)},
             genre_mix={"Rock": 0.50, "Pop": 0.50},
@@ -751,7 +748,7 @@ class TestWorkflowHelpers:
                 year=2023,
                 country="AU",
                 duration_seconds=180,
-                position=1,
+                position_in_playlist=1,
                 selection_reason="Test",
             )
         ]

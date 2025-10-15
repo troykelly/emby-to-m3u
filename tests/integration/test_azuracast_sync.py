@@ -159,6 +159,7 @@ def sample_playlist(sample_daypart, sample_criteria, sample_tracks, sample_valid
         generation_date=date.today(),
         target_track_count_min=40,
         target_track_count_max=56,
+        target_duration_minutes=240,
         track_selection_criteria=sample_criteria,
         created_at=datetime.now(),
     )
@@ -450,6 +451,7 @@ async def test_sync_multiple_playlists_batch(sample_daypart, sample_criteria, sa
             generation_date=date.today(),
             target_track_count_min=40,
             target_track_count_max=56,
+            target_duration_minutes=240,
             track_selection_criteria=sample_criteria,
             created_at=datetime.now(),
         )

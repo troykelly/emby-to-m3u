@@ -27,7 +27,6 @@ def minimal_daypart():
     """Create minimal valid daypart for testing"""
     return DaypartSpec(
         name="Test Show",
-        day="Monday",
         time_range=("10:00", "12:00"),
         bpm_progression={"10:00-11:00": (100, 120)},
         genre_mix={"Alternative": 1.0},
@@ -43,7 +42,6 @@ def complex_daypart():
     """Create complex daypart with all fields populated"""
     return DaypartSpec(
         name="Complex Production Show",
-        day="Wednesday",
         time_range=("06:00", "10:00"),
         bpm_progression={
             "06:00-07:00": (90, 115),
@@ -99,7 +97,6 @@ class TestPlaylistNameGeneration:
         """Test daypart name with special characters is cleaned"""
         daypart = DaypartSpec(
             name="The Show! (2024) - Special Edition",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -120,7 +117,6 @@ class TestPlaylistNameGeneration:
         """Test daypart name with multiple consecutive spaces"""
         daypart = DaypartSpec(
             name="The    Big    Show",
-            day="Tuesday",
             time_range=("14:00", "18:00"),
             bpm_progression={"14:00-15:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -137,7 +133,6 @@ class TestPlaylistNameGeneration:
         """Test daypart name with hyphens"""
         daypart = DaypartSpec(
             name="The-Morning-Show",
-            day="Friday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-07:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -154,7 +149,6 @@ class TestPlaylistNameGeneration:
         """Test daypart name with Unicode characters"""
         daypart = DaypartSpec(
             name="Café Music Show ☀️",
-            day="Saturday",
             time_range=("08:00", "12:00"),
             bpm_progression={"08:00-09:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -172,7 +166,6 @@ class TestPlaylistNameGeneration:
         """Test single-word daypart name"""
         daypart = DaypartSpec(
             name="Sunrise",
-            day="Sunday",
             time_range=("05:00", "08:00"),
             bpm_progression={"05:00-06:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -189,7 +182,6 @@ class TestPlaylistNameGeneration:
         """Test all lowercase daypart name is properly capitalized"""
         daypart = DaypartSpec(
             name="morning vibes",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-07:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -206,7 +198,6 @@ class TestPlaylistNameGeneration:
         """Test all uppercase daypart name"""
         daypart = DaypartSpec(
             name="MORNING SHOW",
-            day="Thursday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-07:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -331,7 +322,6 @@ class TestTrackCriteriaGeneration:
         """Test tolerance doesn't go below 0%"""
         daypart = DaypartSpec(
             name="Test",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (100, 120)},
             genre_mix={"Alternative": 0.03},  # 3%
@@ -357,7 +347,6 @@ class TestTrackCriteriaGeneration:
         """Test tolerance doesn't exceed 100%"""
         daypart = DaypartSpec(
             name="Test",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (100, 120)},
             genre_mix={"Alternative": 0.98},  # 98%
@@ -383,7 +372,6 @@ class TestTrackCriteriaGeneration:
         """Test BPM range uses overall min and max"""
         daypart = DaypartSpec(
             name="Test",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={
                 "06:00-07:00": (80, 100),
@@ -423,7 +411,6 @@ class TestMultipleDaypartsProcessing:
         dayparts = [
             DaypartSpec(
                 name="Morning Show",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"06:00-07:00": (100, 120)},
                 genre_mix={"Alternative": 1.0},
@@ -434,7 +421,6 @@ class TestMultipleDaypartsProcessing:
             ),
             DaypartSpec(
                 name="Afternoon Show",
-                day="Monday",
                 time_range=("14:00", "18:00"),
                 bpm_progression={"14:00-15:00": (90, 110)},
                 genre_mix={"Jazz": 1.0},
@@ -485,7 +471,6 @@ class TestMultipleDaypartsProcessing:
             dayparts.append(
                 DaypartSpec(
                     name=f"Show {i}",
-                    day="Monday",
                     time_range=("10:00", "12:00"),
                     bpm_progression={"10:00-11:00": (100, 120)},
                     genre_mix={"Alternative": 1.0},
@@ -553,7 +538,6 @@ class TestBoundaryDurations:
         try:
             daypart = DaypartSpec(
                 name="Instant",
-                day="Monday",
                 time_range=("12:00", "12:00"),  # 0 duration
                 bpm_progression={"12:00-12:01": (100, 120)},  # Use valid range
                 genre_mix={"Alternative": 1.0},
@@ -572,7 +556,6 @@ class TestBoundaryDurations:
         """Test maximum practical duration (24 hours)"""
         daypart = DaypartSpec(
             name="All Day Marathon",
-            day="Saturday",
             time_range=("00:00", "23:59"),
             bpm_progression={"00:00-01:00": (100, 120)},
             genre_mix={"Alternative": 1.0},
@@ -593,7 +576,6 @@ class TestConstraintEdgeCases:
         """Test very tight BPM range (1 BPM difference)"""
         daypart = DaypartSpec(
             name="Precise",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (120, 121)},
             genre_mix={"Alternative": 1.0},
@@ -610,7 +592,6 @@ class TestConstraintEdgeCases:
         """Test very wide BPM range"""
         daypart = DaypartSpec(
             name="Diverse",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (60, 200)},
             genre_mix={"Alternative": 1.0},
@@ -627,7 +608,6 @@ class TestConstraintEdgeCases:
         """Test single genre at 100%"""
         daypart = DaypartSpec(
             name="Mono Genre",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (100, 120)},
             genre_mix={"Electronic": 1.0},
@@ -644,7 +624,6 @@ class TestConstraintEdgeCases:
         """Test 100% Australian content requirement"""
         daypart = DaypartSpec(
             name="Aussie Only",
-            day="Monday",
             time_range=("10:00", "12:00"),
             bpm_progression={"10:00-11:00": (100, 120)},
             genre_mix={"Alternative": 1.0},

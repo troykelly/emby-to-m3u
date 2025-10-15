@@ -37,6 +37,8 @@ from src.ai_playlist.track_selector import (
     PRICING,
 )
 from src.ai_playlist.models import (
+    GenreCriteria,
+    EraCriteria,
     LLMTrackSelectionRequest,
     LLMTrackSelectionResponse,
     TrackSelectionCriteria,
@@ -54,15 +56,22 @@ from src.ai_playlist.exceptions import (
 @pytest.fixture
 def basic_criteria():
     """Basic track selection criteria for tests."""
+    from datetime import time
+    from src.ai_playlist.models import BPMRange, GenreCriteria, EraCriteria
+
     return TrackSelectionCriteria(
-        bpm_range=(90, 130),
-        bpm_tolerance=10,
-        genre_mix={"Rock": (0.4, 0.6), "Pop": (0.2, 0.4)},
-        genre_tolerance=0.05,
-        era_distribution={"Current (0-2 years)": (0.3, 0.5)},
-        era_tolerance=0.05,
-        australian_min=0.30,
-        energy_flow="uplifting progression",
+        bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 90, 130)],
+        genre_mix={
+            "Rock": GenreCriteria(target_percentage=0.50, tolerance=0.10),
+            "Pop": GenreCriteria(target_percentage=0.30, tolerance=0.10),
+        },
+        era_distribution={
+            "Current (0-2 years)": EraCriteria("Current (0-2 years)", 2023, 2025, 0.40, 0.10),
+        },
+        australian_content_min=0.30,
+        energy_flow_requirements=["uplifting progression"],
+        rotation_distribution={"Power": 0.30, "Medium": 0.40, "Light": 0.30},
+        no_repeat_window_hours=4.0,
     )
 
 
@@ -648,7 +657,7 @@ class TestSelectTracksWithRelaxation:
                 year=2024,
                 country="AU" if i < 4 else "US",
                 duration_seconds=180,
-                position=i + 1,
+                position_in_playlist=i + 1,
                 selection_reason="Test"
             )
             for i in range(12)
@@ -683,7 +692,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         call_count = 0
@@ -719,7 +728,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU" if i < 4 else "US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         call_count = 0
@@ -754,7 +763,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU" if i < 4 else "US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         call_count = 0
@@ -829,7 +838,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU" if i < 4 else "US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         with patch('src.ai_playlist.track_selector.select_tracks_with_llm') as mock_select:
@@ -859,7 +868,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU" if i < 4 else "US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         call_count = 0
@@ -894,7 +903,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         call_count = 0
@@ -930,7 +939,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         async def mock_select_func(request):
@@ -962,7 +971,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id="track-1", title="Song", artist="Artist",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU",
-            duration_seconds=180, position=1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=1, selection_reason="Test"
         )]
 
         with patch('src.ai_playlist.track_selector.select_tracks_with_llm') as mock_select:
@@ -996,7 +1005,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU" if i < 4 else "US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         captured_criteria = []
@@ -1046,7 +1055,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id="track-1", title="Song", artist="Artist",
             album="Album", bpm=102, genre="Jazz", year=1970, country="AU",
-            duration_seconds=180, position=1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=1, selection_reason="Test"
         )]
 
         with patch('src.ai_playlist.track_selector.select_tracks_with_llm') as mock_select:
@@ -1128,7 +1137,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id="track-1", title="Song", artist="Artist",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU",
-            duration_seconds=180, position=1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=1, selection_reason="Test"
         )]
 
         with patch('src.ai_playlist.track_selector.select_tracks_with_llm') as mock_select:
@@ -1157,7 +1166,7 @@ class TestSelectTracksWithRelaxation:
         mock_tracks = [SelectedTrack(
             track_id=f"track-{i}", title=f"Song {i}", artist=f"Artist {i}",
             album="Album", bpm=100, genre="Rock", year=2024, country="AU" if i < 4 else "US",
-            duration_seconds=180, position=i+1, selection_reason="Test"
+            duration_seconds=180, position_in_playlist=i+1, selection_reason="Test"
         ) for i in range(12)]
 
         # Gradually increasing satisfaction
@@ -1420,7 +1429,7 @@ class TestHelperFunctions:
                 year=2024,
                 country="AU" if i < 4 else "US",
                 duration_seconds=180,
-                position=i + 1,
+                position_in_playlist=i + 1,
                 selection_reason="Test"
             )
             for i in range(10)
@@ -1455,7 +1464,7 @@ class TestHelperFunctions:
                 year=2024,
                 country="AU" if i < 4 else "US",
                 duration_seconds=180,
-                position=i + 1,
+                position_in_playlist=i + 1,
                 selection_reason="Test"
             )
             for i in range(10)
@@ -1494,7 +1503,7 @@ class TestHelperFunctions:
                 year=2024,
                 country="AU" if i < 3 else "US",
                 duration_seconds=180,
-                position=i + 1,
+                position_in_playlist=i + 1,
                 selection_reason="Test"
             )
             for i in range(10)

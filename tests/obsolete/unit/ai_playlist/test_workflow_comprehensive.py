@@ -25,6 +25,10 @@ from src.ai_playlist.workflow import (
     serialize_validation,
 )
 from src.ai_playlist.models import (
+    GenreCriteria,
+    EraCriteria,
+    BPMRange,
+    ScheduleType,
     PlaylistSpec,
     DaypartSpec,
     TrackSelectionCriteria,
@@ -103,7 +107,6 @@ class TestBatchTrackSelection:
         """Create sample daypart spec."""
         return DaypartSpec(
             name="Test Daypart",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-10:00": (90, 130)},
             genre_mix={"Rock": 0.50, "Electronic": 0.30},
@@ -167,7 +170,7 @@ class TestBatchTrackSelection:
                     year=2023,
                     country="Australia",
                     duration_seconds=180,
-                    position=i + 1,
+                    position_in_playlist=i + 1,
                     selection_reason="Test reason",
                 )
                 for i in range(10)
@@ -387,7 +390,7 @@ class TestSavePlaylistFile:
                 year=2023,
                 country="Australia",
                 duration_seconds=180,
-                position=i + 1,
+                position_in_playlist=i + 1,
                 selection_reason=f"Reason {i}",
             )
             for i in range(5)
@@ -509,7 +512,7 @@ class TestSyncToAzuracast:
                         year=2023,
                         country="Australia",
                         duration_seconds=180,
-                        position=1,
+                        position_in_playlist=1,
                         selection_reason="Reason",
                     )
                 ],
@@ -603,7 +606,7 @@ class TestSerializationHelpers:
                 year=2023,
                 country="Australia",
                 duration_seconds=180,
-                position=i + 1,
+                position_in_playlist=i + 1,
                 selection_reason=f"Reason {i}",
             )
             for i in range(3)
@@ -680,7 +683,7 @@ class TestSerializationHelpers:
             year=None,  # Optional field
             country=None,  # Optional field
             duration_seconds=180,
-            position=1,
+            position_in_playlist=1,
             selection_reason="Reason",
         )
 
