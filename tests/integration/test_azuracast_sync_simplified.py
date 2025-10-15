@@ -183,7 +183,15 @@ def sample_playlist(sample_daypart, sample_criteria, sample_tracks, sample_valid
 @pytest.mark.asyncio
 async def test_create_new_playlist_in_azuracast(sample_playlist):
     """Test creating a new playlist in AzuraCast."""
-    with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
+    with patch.dict(os.environ, {
+        "AZURACAST_HOST": "http://test-azuracast.com",
+        "AZURACAST_API_KEY": "test-api-key-123",
+        "AZURACAST_STATIONID": "1",
+        "SUBSONIC_URL": "http://test-subsonic.com",
+        "SUBSONIC_USER": "test-user",
+        "SUBSONIC_PASSWORD": "test-password"
+    }):
+      with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
         mock_client = MockClient.return_value
 
         # Mock methods
@@ -204,7 +212,15 @@ async def test_create_new_playlist_in_azuracast(sample_playlist):
 @pytest.mark.asyncio
 async def test_update_existing_playlist(sample_playlist):
     """Test updating an existing playlist."""
-    with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
+    with patch.dict(os.environ, {
+        "AZURACAST_HOST": "http://test-azuracast.com",
+        "AZURACAST_API_KEY": "test-api-key-123",
+        "AZURACAST_STATIONID": "1",
+        "SUBSONIC_URL": "http://test-subsonic.com",
+        "SUBSONIC_USER": "test-user",
+        "SUBSONIC_PASSWORD": "test-password"
+    }):
+      with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
         mock_client = MockClient.return_value
 
         # Mock finding existing playlist
@@ -226,7 +242,15 @@ async def test_update_existing_playlist(sample_playlist):
 @pytest.mark.asyncio
 async def test_verify_tracks_uploaded(sample_playlist):
     """Test verifying that tracks are uploaded correctly."""
-    with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
+    with patch.dict(os.environ, {
+        "AZURACAST_HOST": "http://test-azuracast.com",
+        "AZURACAST_API_KEY": "test-api-key-123",
+        "AZURACAST_STATIONID": "1",
+        "SUBSONIC_URL": "http://test-subsonic.com",
+        "SUBSONIC_USER": "test-user",
+        "SUBSONIC_PASSWORD": "test-password"
+    }):
+      with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
         with patch("src.ai_playlist.azuracast_sync._convert_selected_tracks_to_subsonic_tracks") as mock_convert:
             mock_client = MockClient.return_value
 
@@ -258,15 +282,23 @@ async def test_verify_tracks_uploaded(sample_playlist):
 @pytest.mark.asyncio
 async def test_azuracast_api_error_handling(sample_playlist):
     """Test error handling for AzuraCast API failures."""
-    with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
-        mock_client = MockClient.return_value
+    with patch.dict(os.environ, {
+        "AZURACAST_HOST": "http://test-azuracast.com",
+        "AZURACAST_API_KEY": "test-api-key-123",
+        "AZURACAST_STATIONID": "1",
+        "SUBSONIC_URL": "http://test-subsonic.com",
+        "SUBSONIC_USER": "test-user",
+        "SUBSONIC_PASSWORD": "test-password"
+    }):
+      with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
+          mock_client = MockClient.return_value
 
-        # Mock API error
-        mock_client.get_playlist = MagicMock(side_effect=Exception("AzuraCast API Error"))
+          # Mock API error
+          mock_client.get_playlist = MagicMock(side_effect=Exception("AzuraCast API Error"))
 
-        # Import the error class
-        from src.ai_playlist.azuracast_sync import AzuraCastPlaylistSyncError
+          # Import the error class
+          from src.ai_playlist.azuracast_sync import AzuraCastPlaylistSyncError
 
-        # Should raise exception
-        with pytest.raises((AzuraCastPlaylistSyncError, Exception)):
-            await sync_playlist_to_azuracast(sample_playlist)
+          # Should raise exception
+          with pytest.raises((AzuraCastPlaylistSyncError, Exception)):
+              await sync_playlist_to_azuracast(sample_playlist)

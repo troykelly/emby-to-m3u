@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 from src.ai_playlist.models import Playlist, SelectedTrack
 from src.azuracast.main import AzuraCastSync
 from src.subsonic.client import SubsonicClient
+from src.subsonic.models import SubsonicConfig
 from src.logger import setup_logging
 
 setup_logging()
@@ -89,7 +90,7 @@ async def sync_playlist_to_azuracast(playlist: Playlist) -> Playlist:
         AzuraCastPlaylistSyncError: If sync fails after retries
         ValueError: If playlist validation fails
     """
-    # Validate environment variables
+    # Validate AzuraCast environment variables
     host = os.getenv("AZURACAST_HOST")
     api_key = os.getenv("AZURACAST_API_KEY")
     station_id = os.getenv("AZURACAST_STATIONID")
@@ -106,11 +107,33 @@ async def sync_playlist_to_azuracast(playlist: Playlist) -> Playlist:
             f"Missing required environment variables: {', '.join(missing)}"
         )
 
+    # Validate Subsonic environment variables
+    subsonic_url = os.getenv("SUBSONIC_URL")
+    subsonic_user = os.getenv("SUBSONIC_USER")
+    subsonic_password = os.getenv("SUBSONIC_PASSWORD")
+
+    if not all([subsonic_url, subsonic_user, subsonic_password]):
+        missing = []
+        if not subsonic_url:
+            missing.append("SUBSONIC_URL")
+        if not subsonic_user:
+            missing.append("SUBSONIC_USER")
+        if not subsonic_password:
+            missing.append("SUBSONIC_PASSWORD")
+        raise AzuraCastPlaylistSyncError(
+            f"Missing required environment variables: {', '.join(missing)}"
+        )
+
     # Initialize AzuraCast client (reusing existing client)
     client = AzuraCastSync()
 
     # Initialize Subsonic client for track downloads
-    subsonic_client = SubsonicClient()
+    subsonic_config = SubsonicConfig(
+        url=subsonic_url,
+        username=subsonic_user,
+        password=subsonic_password
+    )
+    subsonic_client = SubsonicClient(subsonic_config)
 
     logger.info(
         f"Starting AzuraCast sync for playlist '{playlist.name}' "

@@ -194,7 +194,10 @@ async def test_create_new_playlist_in_azuracast(sample_playlist):
     with patch.dict(os.environ, {
         "AZURACAST_HOST": "http://test-azuracast.com",
         "AZURACAST_API_KEY": "test-api-key-123",
-        "AZURACAST_STATIONID": "1"
+        "AZURACAST_STATIONID": "1",
+        "SUBSONIC_URL": "http://test-subsonic.com",
+        "SUBSONIC_USER": "test-user",
+        "SUBSONIC_PASSWORD": "test-password"
     }):
         # Mock AzuraCast API client
         with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
@@ -245,7 +248,10 @@ async def test_update_existing_playlist_duplicate_detection(sample_playlist):
     with patch.dict(os.environ, {
         "AZURACAST_HOST": "http://test-azuracast.com",
         "AZURACAST_API_KEY": "test-api-key-123",
-        "AZURACAST_STATIONID": "1"
+        "AZURACAST_STATIONID": "1",
+        "SUBSONIC_URL": "http://test-subsonic.com",
+        "SUBSONIC_USER": "test-user",
+        "SUBSONIC_PASSWORD": "test-password"
     }):
         # Mock AzuraCast API client
         with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
