@@ -10,11 +10,37 @@ import os
 import pytest
 import asyncio
 import multiprocessing
+import time
 from pathlib import Path
 from datetime import date
 from src.ai_playlist.file_lock import FileLock
 from src.ai_playlist.document_parser import DocumentParser
 from src.ai_playlist.models.core import StationIdentityDocument
+
+
+def _generate_playlist_process(process_id: int, output_dir: Path, station_identity_path: Path):
+    """Simulate playlist generation in separate process (module-level for pickling)."""
+    try:
+        # Acquire lock on station identity
+        with FileLock(station_identity_path, timeout=30):
+            # Load document
+            parser = DocumentParser()
+            doc = parser.load_document(station_identity_path)
+
+            # Simulate processing time
+            time.sleep(0.5)
+
+            # Write result
+            result_file = output_dir / f"playlist_{process_id}.txt"
+            result_file.write_text(
+                f"Process {process_id} generated playlist\n"
+                f"Loaded {len(doc.programming_structures)} structures\n"
+            )
+
+        return f"Process {process_id} completed"
+
+    except Exception as e:
+        return f"Process {process_id} failed: {e}"
 
 
 @pytest.mark.integration
@@ -169,33 +195,6 @@ class TestFileLocking:
         - Station identity file properly locked during reads
         - Decision logs written without conflicts
         """
-        import multiprocessing
-        import time
-
-        def generate_playlist_process(process_id: int, output_dir: Path):
-            """Simulate playlist generation in separate process."""
-            try:
-                # Acquire lock on station identity
-                with FileLock(station_identity_path, timeout=30):
-                    # Load document
-                    parser = DocumentParser()
-                    doc = parser.load_document(station_identity_path)
-
-                    # Simulate processing time
-                    time.sleep(0.5)
-
-                    # Write result
-                    result_file = output_dir / f"playlist_{process_id}.txt"
-                    result_file.write_text(
-                        f"Process {process_id} generated playlist\n"
-                        f"Loaded {len(doc.programming_structures)} structures\n"
-                    )
-
-                return f"Process {process_id} completed"
-
-            except Exception as e:
-                return f"Process {process_id} failed: {e}"
-
         # Act - Start multiple processes
         output_dir = tmp_path / "playlists"
         output_dir.mkdir()
@@ -204,8 +203,8 @@ class TestFileLocking:
 
         with multiprocessing.Pool(processes=num_processes) as pool:
             results = pool.starmap(
-                generate_playlist_process,
-                [(i, output_dir) for i in range(num_processes)]
+                _generate_playlist_process,
+                [(i, output_dir, station_identity_path) for i in range(num_processes)]
             )
 
         # Assert - All processes completed
