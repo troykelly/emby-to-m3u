@@ -20,9 +20,17 @@ from src.ai_playlist.models import (
 )
 from src.ai_playlist.azuracast_sync import (
     sync_playlist_to_azuracast,
-    _convert_selected_tracks_to_dict,
+    _convert_selected_tracks_to_subsonic_tracks,
     AzuraCastPlaylistSyncError,
 )
+
+
+@pytest.fixture
+def mock_subsonic_client():
+    """Mock SubsonicClient for testing."""
+    mock_client = MagicMock()
+    mock_client.download_track.return_value = b"fake audio data"
+    return mock_client
 
 
 class TestSyncPlaylistToAzuraCast:
@@ -371,7 +379,7 @@ class TestConvertSelectedTracksToDict:
             )
         ]
 
-        result = _convert_selected_tracks_to_dict(tracks)
+        result = _convert_selected_tracks_to_subsonic_tracks(tracks, mock_subsonic_client)
 
         assert len(result) == 1
         track_dict = result[0]
@@ -407,13 +415,13 @@ class TestConvertSelectedTracksToDict:
             )
         ]
 
-        result = _convert_selected_tracks_to_dict(tracks)
+        result = _convert_selected_tracks_to_subsonic_tracks(tracks, mock_subsonic_client)
 
         assert result[0]["ProductionYear"] == "Unknown Year"
 
     def test_convert_empty_list_returns_empty(self):
         """Test conversion of empty list returns empty list."""
-        result = _convert_selected_tracks_to_dict([])
+        result = _convert_selected_tracks_to_subsonic_tracks([], mock_subsonic_client)
         assert result == []
 
     def test_convert_multiple_tracks_preserves_order(self):
@@ -435,7 +443,7 @@ class TestConvertSelectedTracksToDict:
             for i in range(1, 6)
         ]
 
-        result = _convert_selected_tracks_to_dict(tracks)
+        result = _convert_selected_tracks_to_subsonic_tracks(tracks, mock_subsonic_client)
 
         assert len(result) == 5
         for i, track_dict in enumerate(result, start=1):

@@ -226,7 +226,7 @@ async def test_update_existing_playlist(sample_playlist):
 async def test_verify_tracks_uploaded(sample_playlist):
     """Test verifying that tracks are uploaded correctly."""
     with patch("src.ai_playlist.azuracast_sync.AzuraCastSync") as MockClient:
-        with patch("src.ai_playlist.azuracast_sync._convert_selected_tracks_to_dict") as mock_convert:
+        with patch("src.ai_playlist.azuracast_sync._convert_selected_tracks_to_subsonic_tracks") as mock_convert:
             mock_client = MockClient.return_value
 
             # Mock track conversion to include azuracast_file_id
