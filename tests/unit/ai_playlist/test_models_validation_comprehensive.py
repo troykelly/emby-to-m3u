@@ -47,7 +47,6 @@ class TestStationIdentityDocumentValidation:
         """Test that empty content raises ValueError."""
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -63,7 +62,6 @@ class TestStationIdentityDocumentValidation:
         """Test that whitespace-only content raises ValueError."""
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -86,7 +84,6 @@ class TestStationIdentityDocumentValidation:
         with pytest.raises(ValueError, match="Day must be one of"):
             daypart = DaypartSpecification(
                 name="Morning",
-                day="InvalidDay",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -100,7 +97,6 @@ class TestStationIdentityDocumentValidation:
         """Test that overlapping time ranges on same day raise ValueError."""
         daypart1 = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -111,7 +107,6 @@ class TestStationIdentityDocumentValidation:
         )
         daypart2 = DaypartSpecification(
             name="Late Morning",
-            day="Monday",
             time_range=("09:00", "12:00"),  # Overlaps with 06:00-10:00
             bpm_progression={"morning": (110, 130)},
             genre_mix={"Pop": 0.6},
@@ -139,7 +134,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Name must be non-empty"):
             DaypartSpecification(
                 name="",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -155,7 +149,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Name must be non-empty and max 100 chars"):
             DaypartSpecification(
                 name=long_name,
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -170,7 +163,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Day must be one of"):
             DaypartSpecification(
                 name="Morning",
-                day="NotADay",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -185,7 +177,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Time range must be in HH:MM 24-hour format"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("6:00", "10:00"),  # Missing leading zero
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -200,7 +191,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Time range must be in HH:MM 24-hour format"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "25:00"),  # Invalid hour
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -215,7 +205,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Start time must be before end time"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("10:00", "06:00"),  # Reversed
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -230,7 +219,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Start time must be before end time"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("10:00", "10:00"),  # Equal
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -245,7 +233,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="BPM values must be > 0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (0, 120)},  # Zero BPM
                 genre_mix={"Rock": 0.5},
@@ -260,7 +247,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="BPM values must be > 0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, -10)},  # Negative BPM
                 genre_mix={"Rock": 0.5},
@@ -275,7 +261,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Invalid BPM range"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (130, 100)},  # Reversed
                 genre_mix={"Rock": 0.5},
@@ -290,7 +275,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Genre mix percentages must sum to ≤ 1.0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.6, "Pop": 0.5},  # Sum = 1.1
@@ -305,7 +289,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Genre .* percentage must be 0.0-1.0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": -0.1},  # Negative
@@ -321,7 +304,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Genre mix percentages must sum to"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 1.1},  # > 1.0
@@ -336,7 +318,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Era distribution percentages must sum to ≤ 1.0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -351,7 +332,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Era .* percentage must be 0.0-1.0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -367,7 +347,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Era distribution percentages must sum to"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -382,7 +361,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Australian minimum must be 0.0-1.0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -397,7 +375,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Australian minimum must be 0.0-1.0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -412,7 +389,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Mood must be non-empty"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -428,7 +404,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Mood must be non-empty and max 200 chars"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -443,7 +418,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Tracks per hour must be > 0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -458,7 +432,6 @@ class TestDaypartSpecificationValidation:
         with pytest.raises(ValueError, match="Tracks per hour must be > 0"):
             DaypartSpecification(
                 name="Morning",
-                day="Monday",
                 time_range=("06:00", "10:00"),
                 bpm_progression={"morning": (100, 120)},
                 genre_mix={"Rock": 0.5},
@@ -481,7 +454,6 @@ class TestPlaylistSpecificationValidation:
         """Test that invalid UUID raises ValueError."""
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -511,7 +483,6 @@ class TestPlaylistSpecificationValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -539,7 +510,6 @@ class TestPlaylistSpecificationValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -567,7 +537,6 @@ class TestPlaylistSpecificationValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1346,7 +1315,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1404,7 +1372,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1463,7 +1430,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1522,7 +1488,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1568,7 +1533,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1627,7 +1591,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},
@@ -1690,7 +1653,6 @@ class TestPlaylistValidation:
 
         daypart = DaypartSpecification(
             name="Morning",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"morning": (100, 120)},
             genre_mix={"Rock": 0.5},

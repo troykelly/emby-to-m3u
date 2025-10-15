@@ -10,13 +10,17 @@ import pytest
 import asyncio
 import time
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime
+from datetime import datetime, time
 
 from src.ai_playlist.batch_executor import (
     execute_batch_selection,
     _execute_single_playlist_selection,
 )
 from src.ai_playlist.models import (
+    ScheduleType,
+    BPMRange,
+    GenreCriteria,
+    EraCriteria,
     PlaylistSpec,
     DaypartSpec,
     TrackSelectionCriteria,
@@ -34,9 +38,21 @@ class TestExecuteBatchSelection:
     def sample_daypart(self):
         """Create sample daypart spec."""
         return DaypartSpec(
+            id="test-daypart-001",
             name="Test Daypart",
-            day="Monday",
-            time_range=("06:00", "10:00"),
+            schedule_type=ScheduleType.WEEKDAY,
+            time_start=time(6, 0),
+            time_end=time(10, 0),
+            duration_hours=4.0,
+            target_demographic="Test audience",
+            bpm_progression=[BPMRange(time(6, 0), time(10, 0), 90, 130)],
+            genre_mix={"Rock": 0.50, "Electronic": 0.30},
+            era_distribution={"Current (0-2 years)": 0.60, "Recent (2-5 years)": 0.30},
+            mood_guidelines=["energetic"],
+            content_focus="Test programming",
+            rotation_percentages={"Power": 0.30, "Medium": 0.40, "Light": 0.30},
+            tracks_per_hour=(15, 15),
+        ),
             bpm_progression={"06:00-10:00": (90, 130)},
             genre_mix={"Rock": 0.50, "Electronic": 0.30},
             era_distribution={"Current (0-2 years)": 0.60, "Recent (2-5 years)": 0.30},
@@ -49,7 +65,20 @@ class TestExecuteBatchSelection:
     def sample_criteria(self):
         """Create sample track selection criteria."""
         return TrackSelectionCriteria(
-            bpm_range=(90, 130),
+            bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 90, 130)],
+            genre_mix={
+                "Rock": GenreCriteria(target_percentage=0.50, tolerance=0.05),
+                "Electronic": GenreCriteria(target_percentage=0.30, tolerance=0.05),
+            },
+            era_distribution={
+                "Current (0-2 years)": EraCriteria("Current (0-2 years)", 2023, 2025, 0.60, 0.05),
+                "Recent (2-5 years)": EraCriteria("Recent (2-5 years)", 2020, 2022, 0.30, 0.05),
+            },
+            australian_content_min=0.30,
+            energy_flow_requirements=["energetic"],
+            rotation_distribution={"Power": 0.30, "Medium": 0.40, "Light": 0.30},
+            no_repeat_window_hours=4.0,
+        ),
             bpm_tolerance=10,
             genre_mix={"Rock": (0.45, 0.55), "Electronic": (0.25, 0.35)},
             genre_tolerance=0.05,
@@ -301,7 +330,6 @@ class TestExecuteSinglePlaylistSelection:
         """Create sample playlist spec."""
         daypart = DaypartSpec(
             name="Test",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-10:00": (90, 130)},
             genre_mix={"Rock": 0.50},

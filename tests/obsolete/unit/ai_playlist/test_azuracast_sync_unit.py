@@ -6,11 +6,15 @@ Covers FR-005 (Update existing playlists) and T021 (AzuraCast sync).
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, time
 from unittest.mock import Mock, patch, MagicMock
 import uuid
 
 from src.ai_playlist.models import (
+    ScheduleType,
+    BPMRange,
+    GenreCriteria,
+    EraCriteria,
     Playlist,
     PlaylistSpec,
     SelectedTrack,
@@ -41,7 +45,6 @@ class TestSyncPlaylistToAzuraCast:
         """Create a sample validated playlist for testing."""
         daypart = DaypartSpec(
             name="Test Show",
-            day="Monday",
             time_range=("06:00", "10:00"),
             bpm_progression={"06:00-10:00": (90, 130)},
             genre_mix={"Alternative": 0.25},

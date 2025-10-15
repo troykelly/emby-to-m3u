@@ -298,7 +298,7 @@ class TestEdgeCases:
     def test_empty_password(self):
         """Test token generation with empty password."""
         # SubsonicConfig should raise ValueError for empty password
-        with pytest.raises(ValueError, match="username and password are required"):
+        with pytest.raises(ValueError, match="Either password or api_key must be provided"):
             SubsonicConfig(
                 url="https://music.example.com",
                 username="testuser",
@@ -308,7 +308,7 @@ class TestEdgeCases:
     def test_empty_username(self):
         """Test token generation with empty username."""
         # SubsonicConfig should raise ValueError for empty username
-        with pytest.raises(ValueError, match="username and password are required"):
+        with pytest.raises(ValueError, match="username is required"):
             SubsonicConfig(
                 url="https://music.example.com",
                 username="",
