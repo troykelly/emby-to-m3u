@@ -158,6 +158,7 @@ def sample_playlist_spec(sample_daypart, sample_criteria):
         name="Production Call - 2025-10-07",
         source_daypart_id=sample_daypart.id,
         generation_date=date(2025, 10, 7),
+        target_duration_minutes=240,
         target_track_count_min=48,
         target_track_count_max=60,
         track_selection_criteria=sample_criteria,

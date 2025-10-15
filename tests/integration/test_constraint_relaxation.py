@@ -8,13 +8,13 @@ This test uses LIVE APIs (NO mocks).
 """
 import os
 import pytest
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 from src.ai_playlist.config import AIPlaylistConfig
 from src.ai_playlist.document_parser import DocumentParser
 from src.ai_playlist.openai_client import OpenAIClient
-from src.ai_playlist.models.core import (
-    PlaylistSpecification, SpecialtyConstraint, TrackSelectionCriteria
+from src.ai_playlist.models import (
+    PlaylistSpecification, SpecialtyConstraint, TrackSelectionCriteria, BPMRange
 )
 from src.subsonic.client import SubsonicClient
 from src.subsonic.models import SubsonicConfig
@@ -76,16 +76,17 @@ class TestConstraintRelaxation:
             name="100% Australian Electronic",
             source_daypart_id="test",
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=20,
             target_track_count_max=25,
             track_selection_criteria=TrackSelectionCriteria(
-                bpm_ranges=[(125, 130)],  # Very narrow BPM range
+                bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 125, 130)],  # Very narrow BPM range
                 genre_mix={"Electronic": 1.0},
                 era_distribution={"Current": 1.0},
-                australian_content_min=1.0,  # 100% Australian
-                tolerance_bpm=10,  # Initial tolerance
-                tolerance_genre_percent=0.05,
-                tolerance_era_percent=0.05
+                australian_content_min=1.0,  # 100% Australian,  # Initial tolerance
+                energy_flow_requirements=["energetic"],
+                rotation_distribution={"Power": 1.0},
+                no_repeat_window_hours=4.0,
             )
         )
 
@@ -139,16 +140,17 @@ class TestConstraintRelaxation:
             name="Strict Australian Electronic",
             source_daypart_id="test",
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=15,
             target_track_count_max=20,
             track_selection_criteria=TrackSelectionCriteria(
-                bpm_ranges=[(120, 125)],
+                bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 120, 125)],
                 genre_mix={"Electronic": 1.0},
                 era_distribution={"Current": 1.0},
                 australian_content_min=0.30,  # NON-NEGOTIABLE
-                tolerance_bpm=10,
-                tolerance_genre_percent=0.05,
-                tolerance_era_percent=0.05
+                energy_flow_requirements=["energetic"],
+                rotation_distribution={"Power": 1.0},
+                no_repeat_window_hours=4.0,
             )
         )
 
@@ -192,10 +194,11 @@ class TestConstraintRelaxation:
             name="Multi-Constraint Test",
             source_daypart_id="test",
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=20,
             target_track_count_max=25,
             track_selection_criteria=TrackSelectionCriteria(
-                bpm_ranges=[(100, 105)],  # Narrow
+                bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 100, 105)],  # Narrow
                 genre_mix={
                     "Electronic": 0.5,
                     "Alternative": 0.5
@@ -205,9 +208,9 @@ class TestConstraintRelaxation:
                     "Recent": 0.4
                 },
                 australian_content_min=0.30,
-                tolerance_bpm=10,
-                tolerance_genre_percent=0.05,
-                tolerance_era_percent=0.05
+                energy_flow_requirements=["energetic"],
+                rotation_distribution={"Power": 1.0},
+                no_repeat_window_hours=4.0,
             )
         )
 
@@ -248,16 +251,17 @@ class TestConstraintRelaxation:
             name="Relaxation Log Test",
             source_daypart_id="test",
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=15,
             target_track_count_max=20,
             track_selection_criteria=TrackSelectionCriteria(
-                bpm_ranges=[(110, 115)],
+                bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 110, 115)],
                 genre_mix={"Electronic": 1.0},
                 era_distribution={"Current": 1.0},
                 australian_content_min=0.30,
-                tolerance_bpm=10,
-                tolerance_genre_percent=0.05,
-                tolerance_era_percent=0.05
+                energy_flow_requirements=["energetic"],
+                rotation_distribution={"Power": 1.0},
+                no_repeat_window_hours=4.0,
             )
         )
 
@@ -310,16 +314,17 @@ class TestConstraintRelaxation:
             name="Impossible Criteria",
             source_daypart_id="test",
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=30,
             target_track_count_max=35,
             track_selection_criteria=TrackSelectionCriteria(
-                bpm_ranges=[(142, 144)],  # Very narrow
+                bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 142, 144)],  # Very narrow
                 genre_mix={"Experimental Jazz": 1.0},  # Rare genre
                 era_distribution={"Current": 1.0},
-                australian_content_min=1.0,  # 100% Australian
-                tolerance_bpm=5,  # Tight tolerance
-                tolerance_genre_percent=0.02,
-                tolerance_era_percent=0.02
+                australian_content_min=1.0,  # 100% Australian,  # Tight tolerance
+                energy_flow_requirements=["energetic"],
+                rotation_distribution={"Power": 1.0},
+                no_repeat_window_hours=4.0,
             )
         )
 
@@ -362,16 +367,17 @@ class TestConstraintRelaxation:
             name="Reasoning Test",
             source_daypart_id="test",
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=18,
             target_track_count_max=22,
             track_selection_criteria=TrackSelectionCriteria(
-                bpm_ranges=[(115, 120)],
+                bpm_ranges=[BPMRange(time(0, 0), time(23, 59), 115, 120)],
                 genre_mix={"Electronic": 1.0},
                 era_distribution={"Current": 1.0},
                 australian_content_min=0.30,
-                tolerance_bpm=10,
-                tolerance_genre_percent=0.05,
-                tolerance_era_percent=0.05
+                energy_flow_requirements=["energetic"],
+                rotation_distribution={"Power": 1.0},
+                no_repeat_window_hours=4.0,
             )
         )
 

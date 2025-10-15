@@ -152,6 +152,7 @@ def valid_playlist_spec(valid_daypart_spec, valid_track_criteria) -> PlaylistSpe
         name="Morning Drive: Production Call - 2025-01-15",
         source_daypart_id=valid_daypart_spec.id,
         generation_date=date(2025, 1, 15),
+        target_duration_minutes=240,
         target_track_count_min=40,
         target_track_count_max=48,
         track_selection_criteria=valid_track_criteria,

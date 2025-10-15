@@ -104,6 +104,7 @@ def playlist_spec(basic_criteria):
         name="Test Playlist",
         source_daypart_id="daypart-001",
         generation_date=datetime.now().date(),
+        target_duration_minutes=240,
         target_track_count_min=40,
         target_track_count_max=48,
         track_selection_criteria=basic_criteria,

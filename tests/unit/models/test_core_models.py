@@ -444,6 +444,7 @@ class TestPlaylistSpecification:
             name="Test",
             source_daypart_id=valid_daypart_spec.id,
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=0,  # Invalid
             target_track_count_max=10,
             track_selection_criteria=valid_track_criteria,
@@ -460,6 +461,7 @@ class TestPlaylistSpecification:
             name="Test",
             source_daypart_id=valid_daypart_spec.id,
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=50,
             target_track_count_max=40,  # Less than min
             track_selection_criteria=valid_track_criteria,
@@ -476,6 +478,7 @@ class TestPlaylistSpecification:
             name="Test",
             source_daypart_id=valid_daypart_spec.id,
             generation_date=date.today(),
+            target_duration_minutes=240,
             target_track_count_min=40,
             target_track_count_max=48,
             track_selection_criteria=valid_track_criteria,
