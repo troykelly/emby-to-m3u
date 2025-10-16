@@ -38,8 +38,8 @@ def generate_playlist_specs(dayparts: List[DaypartSpec]) -> List[PlaylistSpec]:
         # Generate name using schema: {Day}_{ShowName}_{StartTime}_{EndTime}
         playlist_name = _generate_playlist_name(daypart)
 
-        # Calculate target duration from time range
-        target_duration = _calculate_duration_minutes(daypart.time_range)
+        # Calculate target duration from time_start and time_end
+        target_duration = _calculate_duration_minutes_from_times(daypart.time_start, daypart.time_end)
 
         # Generate track selection criteria from daypart constraints
         track_criteria = _generate_track_criteria(daypart)
@@ -55,6 +55,7 @@ def generate_playlist_specs(dayparts: List[DaypartSpec]) -> List[PlaylistSpec]:
             generation_date=date.today(),
             target_track_count_min=min_tracks,
             target_track_count_max=max_tracks,
+            target_duration_minutes=target_duration,
             track_selection_criteria=track_criteria,
             created_at=datetime.now(),
         )
@@ -66,14 +67,14 @@ def generate_playlist_specs(dayparts: List[DaypartSpec]) -> List[PlaylistSpec]:
 
 def _generate_playlist_name(daypart: DaypartSpec) -> str:
     """
-    Generate playlist name using schema: {Day}_{ShowName}_{StartTime}_{EndTime}
+    Generate playlist name using schema: {ScheduleType}_{ShowName}_{StartTime}_{EndTime}
 
     Examples:
-        "Monday_ProductionCall_0600_1000"
-        "Saturday_TheSession_1400_1800"
+        "Weekday_ProductionCall_0600_1000"
+        "Weekend_TheSession_1400_1800"
 
     Args:
-        daypart: Daypart specification with name, day, and time_range
+        daypart: Daypart specification with name, schedule_type, time_start, and time_end
 
     Returns:
         Formatted playlist name
@@ -81,11 +82,14 @@ def _generate_playlist_name(daypart: DaypartSpec) -> str:
     # Convert show name to camelCase, remove spaces and special chars
     show_name = _to_camel_case(daypart.name)
 
-    # Format times as HHMM (remove colon)
-    start_time = daypart.time_range[0].replace(":", "")
-    end_time = daypart.time_range[1].replace(":", "")
+    # Format times as HHMM from time objects
+    start_time = daypart.time_start.strftime("%H%M")
+    end_time = daypart.time_end.strftime("%H%M")
 
-    return f"{daypart.day}_{show_name}_{start_time}_{end_time}"
+    # Use schedule_type value (e.g., "weekday", "weekend")
+    schedule_prefix = daypart.schedule_type.value.capitalize()
+
+    return f"{schedule_prefix}_{show_name}_{start_time}_{end_time}"
 
 
 def _to_camel_case(text: str) -> str:
@@ -143,7 +147,7 @@ def _calculate_track_count(daypart: DaypartSpec, duration_minutes: int) -> tuple
 
 def _calculate_duration_minutes(time_range: tuple[str, str]) -> int:
     """
-    Calculate duration in minutes from time range.
+    Calculate duration in minutes from time range (legacy function).
 
     Args:
         time_range: Tuple of (start_time, end_time) in "HH:MM" format
@@ -164,6 +168,31 @@ def _calculate_duration_minutes(time_range: tuple[str, str]) -> int:
     # Convert to minutes since midnight
     start_minutes = start_hour * 60 + start_min
     end_minutes = end_hour * 60 + end_min
+
+    # Calculate duration
+    duration = end_minutes - start_minutes
+
+    return duration
+
+
+def _calculate_duration_minutes_from_times(time_start: time, time_end: time) -> int:
+    """
+    Calculate duration in minutes from time objects.
+
+    Args:
+        time_start: Start time as time object
+        time_end: End time as time object
+
+    Returns:
+        Duration in minutes
+
+    Examples:
+        time(6, 0), time(10, 0) -> 240 minutes
+        time(14, 0), time(18, 0) -> 240 minutes
+    """
+    # Convert to minutes since midnight
+    start_minutes = time_start.hour * 60 + time_start.minute
+    end_minutes = time_end.hour * 60 + time_end.minute
 
     # Calculate duration
     duration = end_minutes - start_minutes
