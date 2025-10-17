@@ -50,8 +50,8 @@ class TestFileLocking:
 
     @pytest.fixture
     def station_identity_path(self) -> Path:
-        """Get path to station identity file."""
-        return Path("/workspaces/emby-to-m3u/station-identity.md")
+        """Get path to station identity example file."""
+        return Path("/workspaces/emby-to-m3u/station-identity.example.md")
 
     @pytest.fixture
     def test_lock_file(self, tmp_path: Path) -> Path:
