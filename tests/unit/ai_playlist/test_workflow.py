@@ -10,6 +10,7 @@ Tests all workflow functions including:
 """
 import pytest
 import json
+import uuid
 from pathlib import Path
 from datetime import datetime, time as time_obj
 from decimal import Decimal
@@ -321,5 +322,270 @@ class TestSerializationHelpers:
             pass
 
 
-# Tests for async functions would go here but require significant mocking
-# These will be added in subsequent test files
+class TestBatchTrackSelection:
+    """Tests for async batch_track_selection() function."""
+
+    @pytest.fixture
+    def sample_playlist_specs(self) -> List[PlaylistSpec]:
+        """Create sample playlist specs for testing."""
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[],
+            genre_mix={},
+            era_distribution={},
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        specs = []
+        for i in range(2):
+            spec = PlaylistSpec(
+                id=str(uuid.uuid4()),  # Valid UUID4
+                name=f"Playlist {i}",
+                source_daypart_id=str(uuid.uuid4()),  # Valid UUID4
+                generation_date=datetime.now().date(),
+                target_track_count_min=10,
+                target_track_count_max=12,
+                target_duration_minutes=240,
+                track_selection_criteria=criteria,
+                created_at=datetime.now(),
+            )
+            specs.append(spec)
+        return specs
+
+    @pytest.fixture
+    def mock_decision_logger(self):
+        """Create mock decision logger."""
+        logger = Mock()
+        logger.log_decision = Mock()
+        return logger
+
+    @pytest.mark.asyncio
+    async def test_batch_track_selection_success(
+        self, sample_playlist_specs: List[PlaylistSpec], mock_decision_logger
+    ):
+        """Test successful batch track selection."""
+        # Arrange
+        mock_response = Mock()
+        mock_response.selected_tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=120,
+                genre="Electronic",
+                year=2020,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(10)
+        ]
+        mock_response.cost_usd = 0.05
+        mock_response.execution_time_seconds = 5.0
+        mock_response.reasoning = "Test reasoning"
+
+        # Act
+        with patch('src.ai_playlist.workflow.select_tracks_with_llm', new_callable=AsyncMock) as mock_select:
+            mock_select.return_value = mock_response
+
+            with patch('src.ai_playlist.workflow.validate_playlist') as mock_validate:
+                mock_validate.return_value = ValidationResult(
+                    playlist_id="test-001",
+                    overall_status=ValidationStatus.PASS,
+                    constraint_scores={},
+                    flow_quality_metrics=FlowQualityMetrics(
+                        bpm_variance=0.15,
+                        bpm_progression_coherence=0.90,
+                        energy_consistency=0.85,
+                        genre_diversity_index=0.75,
+                    ),
+                    compliance_percentage=0.92,
+                    validated_at=datetime.now(),
+                    gap_analysis=[],
+                )
+
+                result = await batch_track_selection(
+                    sample_playlist_specs,
+                    max_cost_usd=0.50,
+                    decision_logger=mock_decision_logger,
+                )
+
+        # Assert
+        assert len(result) == 2
+        assert all(isinstance(p, Playlist) for p in result)
+        assert mock_decision_logger.log_decision.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_batch_track_selection_cost_exceeded(
+        self, sample_playlist_specs: List[PlaylistSpec], mock_decision_logger
+    ):
+        """Test that cost exceeded error is raised."""
+        # Arrange
+        mock_response = Mock()
+        mock_response.cost_usd = 0.30  # Will exceed 0.50 for 2 playlists
+        mock_response.selected_tracks = [
+            SelectedTrack(
+                track_id="track-1",
+                title="Track 1",
+                artist="Artist",
+                album="Album",
+                bpm=120,
+                genre="Electronic",
+                year=2020,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=0,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+        ]
+        mock_response.execution_time_seconds = 5.0
+        mock_response.reasoning = "Test reasoning"
+
+        # Act & Assert
+        with patch('src.ai_playlist.workflow.select_tracks_with_llm', new_callable=AsyncMock) as mock_select:
+            mock_select.return_value = mock_response
+
+            with patch('src.ai_playlist.workflow.validate_playlist') as mock_validate:
+                mock_validate.return_value = ValidationResult(
+                    playlist_id="test-001",
+                    overall_status=ValidationStatus.PASS,
+                    constraint_scores={},
+                    flow_quality_metrics=FlowQualityMetrics(
+                        bpm_variance=0.15,
+                        bpm_progression_coherence=0.90,
+                        energy_consistency=0.85,
+                        genre_diversity_index=0.75,
+                    ),
+                    compliance_percentage=0.92,
+                    validated_at=datetime.now(),
+                    gap_analysis=[],
+                )
+
+                with pytest.raises(CostExceededError):
+                    await batch_track_selection(
+                        sample_playlist_specs,
+                        max_cost_usd=0.50,
+                        decision_logger=mock_decision_logger,
+                    )
+
+
+class TestSyncToAzuraCast:
+    """Tests for async sync_to_azuracast() function."""
+
+    @pytest.fixture
+    def sample_playlists(self) -> List[Playlist]:
+        """Create sample playlists for syncing."""
+        validation_result = ValidationResult(
+            playlist_id="test-001",
+            overall_status=ValidationStatus.PASS,
+            constraint_scores={},
+            flow_quality_metrics=FlowQualityMetrics(
+                bpm_variance=0.15,
+                bpm_progression_coherence=0.90,
+                energy_consistency=0.85,
+                genre_diversity_index=0.75,
+            ),
+            compliance_percentage=0.92,
+            validated_at=datetime.now(),
+            gap_analysis=[],
+        )
+
+        playlists = []
+        for i in range(2):
+            playlist = Playlist(
+                id=f"playlist-{i}",
+                name=f"Test_Playlist_{i}",
+                specification_id=f"spec-{i}",
+                tracks=[],
+                validation_result=validation_result,
+                created_at=datetime.now(),
+                cost_actual=Decimal("0.10"),
+                generation_time_seconds=10.0,
+            )
+            playlists.append(playlist)
+        return playlists
+
+    @pytest.mark.asyncio
+    async def test_sync_to_azuracast_success(self, sample_playlists: List[Playlist]):
+        """Test successful sync to AzuraCast."""
+        # Arrange
+        mock_synced = Mock()
+        mock_synced.azuracast_id = 123
+
+        # Act
+        with patch('src.ai_playlist.workflow.sync_playlist_to_azuracast', new_callable=AsyncMock) as mock_sync:
+            mock_sync.return_value = mock_synced
+
+            result = await sync_to_azuracast(sample_playlists)
+
+        # Assert
+        assert len(result) == 2
+        assert result["Test_Playlist_0"] == 123
+        assert result["Test_Playlist_1"] == 123
+
+    @pytest.mark.asyncio
+    async def test_sync_to_azuracast_partial_failure(self, sample_playlists: List[Playlist]):
+        """Test sync with partial failures."""
+        # Arrange
+        from src.ai_playlist.azuracast_sync import AzuraCastPlaylistSyncError
+
+        mock_synced = Mock()
+        mock_synced.azuracast_id = 123
+
+        # Act
+        with patch('src.ai_playlist.workflow.sync_playlist_to_azuracast', new_callable=AsyncMock) as mock_sync:
+            # First call succeeds, second fails
+            mock_sync.side_effect = [mock_synced, AzuraCastPlaylistSyncError("Sync failed")]
+
+            result = await sync_to_azuracast(sample_playlists)
+
+        # Assert
+        # Only first playlist synced successfully
+        assert len(result) == 1
+        assert result["Test_Playlist_0"] == 123
+
+    @pytest.mark.asyncio
+    async def test_sync_to_azuracast_empty_list(self):
+        """Test sync with empty playlist list."""
+        # Act
+        result = await sync_to_azuracast([])
+
+        # Assert
+        assert result == {}
+
+
+    @pytest.mark.asyncio
+    async def test_sync_to_azuracast_unexpected_exception(self, sample_playlists: List[Playlist]):
+        """Test sync_to_azuracast handles unexpected exceptions gracefully."""
+        # Arrange
+        mock_synced = Mock()
+        mock_synced.azuracast_id = 123
+
+        with patch('src.ai_playlist.workflow.sync_playlist_to_azuracast', new_callable=AsyncMock) as mock_sync:
+            # First playlist succeeds, second raises unexpected exception
+            mock_sync.side_effect = [
+                mock_synced,
+                Exception("Unexpected database error"),
+            ]
+
+            # Act
+            result = await sync_to_azuracast(sample_playlists)
+
+            # Assert
+            # First playlist succeeded
+            assert "Test_Playlist_0" in result
+            assert result["Test_Playlist_0"] == 123
+            # Second playlist not in results (exception was caught and logged)
+            assert "Test_Playlist_1" not in result

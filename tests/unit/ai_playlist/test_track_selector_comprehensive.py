@@ -504,6 +504,230 @@ class TestSelectTracksWithLLM:
                 await select_tracks_with_llm(request)
 
 
-# Note: select_tracks_with_relaxation() tests would require extensive mocking
-# of the entire select_tracks_with_llm() flow with criteria relaxation logic.
-# These are integration-level tests better suited for tests/integration/
+class TestSelectTracksWithRelaxation:
+    """Tests for select_tracks_with_relaxation() async function."""
+
+    @pytest.mark.asyncio
+    async def test_relaxation_succeeds_on_first_iteration(self):
+        """Test relaxation succeeds on first iteration with high satisfaction."""
+        # Arrange
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[
+                BPMRange(time_start=time_obj(6, 0), time_end=time_obj(10, 0), bpm_min=100, bpm_max=120)
+            ],
+            genre_mix={},
+            era_distribution={},
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        mock_tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=110,
+                genre="Electronic",
+                year=2020,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(12)
+        ]
+
+        # Act
+        with patch("src.ai_playlist.track_selector.select_tracks_with_llm", new_callable=AsyncMock) as mock_select:
+            mock_response = LLMTrackSelectionResponse(
+                request_id=str(uuid.uuid4()),
+                selected_tracks=mock_tracks,
+                tool_calls=[],
+                reasoning="Test",
+                cost_usd=0.01,
+                execution_time_seconds=1.0,
+            )
+            mock_select.return_value = mock_response
+
+            result = await select_tracks_with_relaxation(criteria, max_iterations=3)
+
+        # Assert
+        assert len(result) == 12
+        assert result[0].title == "Track 0"
+
+    @pytest.mark.asyncio
+    async def test_relaxation_retries_with_constraint_relaxation(self):
+        """Test relaxation retries with progressively relaxed constraints."""
+        # Arrange
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[
+                BPMRange(time_start=time_obj(6, 0), time_end=time_obj(10, 0), bpm_min=100, bpm_max=120)
+            ],
+            genre_mix={
+                "Electronic": GenreCriteria(target_percentage=0.50, tolerance=0.10),
+            },
+            era_distribution={
+                "Current": EraCriteria("Current", 2023, 2025, 0.40, 0.10),
+            },
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        # Create mock that returns low satisfaction first, then high
+        call_count = 0
+
+        async def mock_select_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            # First call: low satisfaction (will trigger relaxation)
+            if call_count == 1:
+                tracks = [
+                    SelectedTrack(
+                        track_id=f"track-{i}",
+                        title=f"Track {i}",
+                        artist="Artist",
+                        album="Album",
+                        bpm=50,  # Way out of range - low satisfaction
+                        genre="Rock",
+                        year=2010,
+                        country="US",
+                        duration_seconds=180,
+                        is_australian=False,
+                        rotation_category="Power",
+                        position_in_playlist=i,
+                        selection_reasoning="Test",
+                        validation_status=ValidationStatus.PASS,
+                        metadata_source="test",
+                    )
+                    for i in range(12)
+                ]
+            else:
+                # Second call: high satisfaction
+                tracks = [
+                    SelectedTrack(
+                        track_id=f"track-{i}",
+                        title=f"Track {i}",
+                        artist="Artist",
+                        album="Album",
+                        bpm=110,
+                        genre="Electronic",
+                        year=2024,
+                        country="AU",
+                        duration_seconds=180,
+                        is_australian=True,
+                        rotation_category="Power",
+                        position_in_playlist=i,
+                        selection_reasoning="Test",
+                        validation_status=ValidationStatus.PASS,
+                        metadata_source="test",
+                    )
+                    for i in range(12)
+                ]
+
+            return LLMTrackSelectionResponse(
+                request_id=str(uuid.uuid4()),
+                selected_tracks=tracks,
+                tool_calls=[],
+                reasoning="Test",
+                cost_usd=0.01,
+                execution_time_seconds=1.0,
+            )
+
+        # Act
+        with patch("src.ai_playlist.track_selector.select_tracks_with_llm", new_callable=AsyncMock) as mock_select:
+            mock_select.side_effect = mock_select_side_effect
+
+            result = await select_tracks_with_relaxation(criteria, max_iterations=3)
+
+        # Assert
+        assert len(result) == 12
+        assert call_count >= 2  # Should have retried at least once
+
+    @pytest.mark.asyncio
+    async def test_relaxation_returns_empty_on_all_failures(self):
+        """Test relaxation returns empty list when all iterations fail."""
+        # Arrange
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[],
+            genre_mix={},
+            era_distribution={},
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        # Act
+        with patch("src.ai_playlist.track_selector.select_tracks_with_llm", new_callable=AsyncMock) as mock_select:
+            mock_select.side_effect = Exception("Test error")
+
+            result = await select_tracks_with_relaxation(criteria, max_iterations=2)
+
+        # Assert
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_relaxation_exhausts_all_iterations(self):
+        """Test relaxation uses all iterations when satisfaction never met."""
+        # Arrange
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[
+                BPMRange(time_start=time_obj(6, 0), time_end=time_obj(10, 0), bpm_min=100, bpm_max=120)
+            ],
+            genre_mix={},
+            era_distribution={},
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        # Mock tracks with low satisfaction
+        mock_tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=50,  # Out of range
+                genre="Electronic",
+                year=2020,
+                country="US",  # Not Australian
+                duration_seconds=180,
+                is_australian=False,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(12)
+        ]
+
+        # Act
+        with patch("src.ai_playlist.track_selector.select_tracks_with_llm", new_callable=AsyncMock) as mock_select:
+            mock_response = LLMTrackSelectionResponse(
+                request_id=str(uuid.uuid4()),
+                selected_tracks=mock_tracks,
+                tool_calls=[],
+                reasoning="Test",
+                cost_usd=0.01,
+                execution_time_seconds=1.0,
+            )
+            mock_select.return_value = mock_response
+
+            result = await select_tracks_with_relaxation(criteria, max_iterations=3)
+
+        # Assert - Should return best effort after all iterations
+        assert len(result) == 12
+        assert mock_select.call_count == 4  # 0, 1, 2, 3 = 4 iterations

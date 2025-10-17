@@ -82,14 +82,13 @@ async def batch_track_selection(
         logger.info("Processing playlist %d/%d: %s", i, len(playlist_specs), spec.name)
 
         try:
-            # Calculate target track count based on duration and tracks per hour
-            duration_hours = spec.target_duration_minutes / 60.0
-            target_track_count = int(spec.daypart.tracks_per_hour * duration_hours)
+            # Use the target track count from the spec (already calculated by playlist planner)
+            target_track_count = spec.target_track_count_min
 
             # Build LLM track selection request
             request = LLMTrackSelectionRequest(
                 playlist_id=spec.id,
-                criteria=spec.track_criteria,
+                criteria=spec.track_selection_criteria,
                 target_track_count=target_track_count,
                 max_cost_usd=cost_per_playlist,
                 timeout_seconds=60,
@@ -113,7 +112,7 @@ async def batch_track_selection(
             # Validate playlist
             validation_result = validate_playlist(
                 tracks=response.selected_tracks,
-                criteria=spec.track_criteria,
+                criteria=spec.track_selection_criteria,
             )
 
             # Create playlist object
@@ -134,7 +133,7 @@ async def batch_track_selection(
             decision_logger.log_decision(
                 decision_type="track_selection",
                 playlist_name=spec.name,
-                criteria=serialize_criteria(spec.track_criteria),
+                criteria=serialize_criteria(spec.track_selection_criteria),
                 selected_tracks=serialize_tracks(response.selected_tracks),
                 validation_result=serialize_validation(validation_result),
                 metadata={
@@ -153,7 +152,7 @@ async def batch_track_selection(
             decision_logger.log_decision(
                 decision_type="track_selection",
                 playlist_name=spec.name,
-                criteria=serialize_criteria(spec.track_criteria),
+                criteria=serialize_criteria(spec.track_selection_criteria),
                 selected_tracks=[],
                 validation_result={},
                 metadata={

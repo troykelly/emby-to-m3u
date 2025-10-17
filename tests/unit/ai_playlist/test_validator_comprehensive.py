@@ -874,3 +874,290 @@ class TestGenerateGapAnalysis:
         # Assert
         assert isinstance(gap_analysis, dict)
         # Should be empty or have minimal gaps for compliant tracks
+
+
+class TestValidationEdgeCases:
+    """Tests for edge cases in validation logic."""
+
+    def test_validate_warning_status_with_partial_compliance(self):
+        """Test that WARNING status is returned when compliance is between 50-100%."""
+        # Arrange - Criteria with multiple requirements
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[
+                BPMRange(
+                    time_start=time_obj(6, 0),
+                    time_end=time_obj(10, 0),
+                    bpm_min=100,
+                    bpm_max=130,
+                )
+            ],
+            genre_mix={
+                "Electronic": GenreCriteria(target_percentage=0.50, tolerance=0.10),
+                "Rock": GenreCriteria(target_percentage=0.30, tolerance=0.10),
+            },
+            era_distribution={
+                "Current": EraCriteria("Current", 2023, 2025, 0.40, 0.10),
+            },
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        # Tracks that meet BPM but fail genre/era (60% compliance)
+        tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=110,  # Meets BPM
+                genre="Jazz",  # Wrong genre
+                year=2010,  # Wrong era
+                country="AU",  # Meets Australian
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(10)
+        ]
+
+        # Act
+        result = validate_playlist(tracks, criteria)
+
+        # Assert
+        assert result.overall_status == ValidationStatus.WARNING
+        assert 0.50 <= result.compliance_percentage < 1.0
+
+    def test_calculate_australian_satisfaction_with_no_requirement(self):
+        """Test Australian satisfaction when no requirement is set (australian_content_min=0)."""
+        # Arrange
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[],
+            genre_mix={},
+            era_distribution={},
+            australian_content_min=0.0,  # No requirement
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=110,
+                genre="Electronic",
+                year=2024,
+                country="US",  # No Australian tracks
+                duration_seconds=180,
+                is_australian=False,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(10)
+        ]
+
+        # Act
+        satisfaction = _calculate_australian_satisfaction(tracks, criteria)
+
+        # Assert
+        assert satisfaction == 1.0  # Should return 1.0 when no requirement
+
+    def test_calculate_flow_quality_with_single_track(self):
+        """Test flow quality calculation with only one track."""
+        # Arrange
+        tracks = [
+            SelectedTrack(
+                track_id="track-1",
+                title="Track 1",
+                artist="Artist",
+                album="Album",
+                bpm=120,
+                genre="Electronic",
+                year=2024,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=0,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+        ]
+
+        # Act
+        coherence, variance, assessment = _calculate_flow_quality(tracks)
+
+        # Assert
+        assert coherence == 1.0  # Perfect flow with single track
+        assert variance == 0.0  # No variance
+        assert assessment == "smooth"
+
+    def test_calculate_flow_quality_with_no_valid_bpm_data(self):
+        """Test flow quality when tracks have no valid BPM data."""
+        # Arrange - Tracks with None BPM
+        tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=None,  # No BPM data
+                genre="Electronic",
+                year=2024,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(5)
+        ]
+
+        # Act
+        coherence, variance, assessment = _calculate_flow_quality(tracks)
+
+        # Assert
+        # Should handle missing BPM gracefully
+        assert 0.0 <= coherence <= 1.0
+        assert variance >= 0.0
+
+    def test_validate_low_compliance_returns_fail_status(self):
+        """Test that FAIL status is returned when compliance is below 50%."""
+        # Arrange
+        criteria = TrackSelectionCriteria(
+            bpm_ranges=[
+                BPMRange(
+                    time_start=time_obj(6, 0),
+                    time_end=time_obj(10, 0),
+                    bpm_min=100,
+                    bpm_max=130,
+                )
+            ],
+            genre_mix={
+                "Electronic": GenreCriteria(target_percentage=0.50, tolerance=0.10),
+                "Rock": GenreCriteria(target_percentage=0.30, tolerance=0.10),
+            },
+            era_distribution={
+                "Current": EraCriteria("Current", 2023, 2025, 0.40, 0.10),
+            },
+            australian_content_min=0.30,
+            energy_flow_requirements=[],
+            rotation_distribution={},
+            no_repeat_window_hours=4.0,
+        )
+
+        # Tracks that fail most criteria (< 50% compliance)
+        tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=80,  # Wrong BPM
+                genre="Jazz",  # Wrong genre
+                year=2010,  # Wrong era
+                country="US",  # Not Australian
+                duration_seconds=180,
+                is_australian=False,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(10)
+        ]
+
+        # Act
+        result = validate_playlist(tracks, criteria)
+
+        # Assert
+        assert result.overall_status == ValidationStatus.FAIL
+        assert result.compliance_percentage < 0.50
+
+    def test_calculate_flow_quality_with_moderate_progression(self):
+        """Test flow quality with moderate BPM progression."""
+        # Arrange - Tracks with moderate BPM changes (10-20 BPM)
+        tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=100 + (i * 15),  # Gradual 15 BPM increases
+                genre="Electronic",
+                year=2024,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(5)
+        ]
+
+        # Act
+        coherence, variance, assessment = _calculate_flow_quality(tracks)
+
+        # Assert
+        assert assessment == "moderate"
+        assert 10 <= variance <= 20
+
+    def test_calculate_genre_diversity_with_empty_tracks(self):
+        """Test genre diversity with empty tracks list."""
+        # Arrange
+        tracks = []
+
+        # Act
+        diversity = _calculate_genre_diversity(tracks)
+
+        # Assert
+        assert diversity == 0.0
+
+    def test_calculate_genre_diversity_with_no_genre_data(self):
+        """Test genre diversity when tracks have no genre information."""
+        # Arrange - Tracks with None genre
+        tracks = [
+            SelectedTrack(
+                track_id=f"track-{i}",
+                title=f"Track {i}",
+                artist="Artist",
+                album="Album",
+                bpm=110,
+                genre=None,  # No genre data
+                year=2024,
+                country="AU",
+                duration_seconds=180,
+                is_australian=True,
+                rotation_category="Power",
+                position_in_playlist=i,
+                selection_reasoning="Test",
+                validation_status=ValidationStatus.PASS,
+                metadata_source="test",
+            )
+            for i in range(5)
+        ]
+
+        # Act
+        diversity = _calculate_genre_diversity(tracks)
+
+        # Assert
+        assert diversity == 0.0  # No genre data = no diversity

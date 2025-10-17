@@ -20,13 +20,13 @@ def build_selection_prompt(request: LLMTrackSelectionRequest) -> str:
 
     # Build genre requirements string
     genre_requirements = "\n".join(
-        f"- {genre}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        f"- {genre}: {criteria_obj.target_percentage - criteria_obj.tolerance:.0%}-{criteria_obj.target_percentage + criteria_obj.tolerance:.0%}"
         for genre, criteria_obj in criteria.genre_mix.items()
     )
 
     # Build era requirements string
     era_requirements = "\n".join(
-        f"- {era}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        f"- {era}: {criteria_obj.target_percentage - criteria_obj.tolerance:.0%}-{criteria_obj.target_percentage + criteria_obj.tolerance:.0%}"
         for era, criteria_obj in criteria.era_distribution.items()
     )
 
@@ -91,15 +91,26 @@ def build_relaxation_prompt(criteria: TrackSelectionCriteria, iteration: int) ->
 
     # Build genre requirements
     genre_requirements = "\n".join(
-        f"- {genre}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        f"- {genre}: {criteria_obj.target_percentage - criteria_obj.tolerance:.0%}-{criteria_obj.target_percentage + criteria_obj.tolerance:.0%}"
         for genre, criteria_obj in criteria.genre_mix.items()
     )
 
     # Build era requirements
     era_requirements = "\n".join(
-        f"- {era}: {criteria_obj.min_percentage:.0%}-{criteria_obj.max_percentage:.0%}"
+        f"- {era}: {criteria_obj.target_percentage - criteria_obj.tolerance:.0%}-{criteria_obj.target_percentage + criteria_obj.tolerance:.0%}"
         for era, criteria_obj in criteria.era_distribution.items()
     )
+
+    # Get BPM range from bpm_ranges
+    if criteria.bpm_ranges:
+        bpm_min = min(r.bpm_min for r in criteria.bpm_ranges)
+        bpm_max = max(r.bpm_max for r in criteria.bpm_ranges)
+        bpm_range_str = f"{bpm_min}-{bpm_max} BPM"
+    else:
+        bpm_range_str = "No BPM constraints"
+
+    # Calculate tolerance based on iteration
+    tolerance = 0 if iteration == 0 else 10
 
     prompt = f"""Select tracks for a radio playlist {relaxation_note}:
 
