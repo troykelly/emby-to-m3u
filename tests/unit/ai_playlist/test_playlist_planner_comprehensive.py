@@ -532,3 +532,17 @@ class TestGenerateTrackCriteria:
 
         # Assert
         assert "Energetic" in criteria.energy_flow_requirements
+
+
+class TestDaypartEdgeCases:
+    """Tests for edge cases in daypart criteria extraction."""
+
+    def test_daypart_without_time_attributes(self):
+        """Test handling daypart without time_start/time_end attributes."""
+        # Arrange
+        from unittest.mock import Mock
+        daypart = Mock()
+        # Mock has bpm_progression but no time_start/time_end
+        daypart.bpm_progression = {"120-130": "6:00-10:00"}
+        # Remove time attributes
+        del daypart.time_start
