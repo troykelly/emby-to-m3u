@@ -80,7 +80,7 @@
 		}
 	},
 
-	"postCreateCommand": "git config --global core.autocrlf input && git config --global init.defaultBranch main && ./.agent/scripts/init-repository.sh && sudo DEBIAN_FRONTEND=noninteractive apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg wkhtmltopdf && pip3 install --user -r requirements.txt",
+	"postCreateCommand": "git config --global core.autocrlf input && git config --global init.defaultBranch main && ./.agent/scripts/init-repository.sh && sudo DEBIAN_FRONTEND=noninteractive apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ffmpeg wkhtmltopdf aubio-tools && pip3 install --user -r requirements.txt",
 
 	"remoteUser": "vscode",
 

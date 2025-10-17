@@ -179,6 +179,10 @@ class TestCacheExpirationEdgeCases:
 
     def test_get_cached_tracks_force_refresh(self):
         """Test force_refresh bypasses unexpired cache."""
+        # Reset global cache to expired state before test
+        from src.azuracast import cache
+        cache._known_tracks_cache = KnownTracksCache(tracks=[], fetched_at=0.0)
+
         call_count = 0
 
         def mock_fetch():
@@ -186,18 +190,18 @@ class TestCacheExpirationEdgeCases:
             call_count += 1
             return [{"id": str(call_count)}]
 
-        # First call
+        # First call - cache is expired, should fetch
         tracks1 = get_cached_known_tracks(mock_fetch, force_refresh=False)
         assert call_count == 1
 
-        # Second call without force - should use cache
+        # Second call without force - should use cache (not expired yet)
         tracks2 = get_cached_known_tracks(mock_fetch, force_refresh=False)
-        assert call_count == 1
+        assert call_count == 1  # Should still be 1 (cache hit)
         assert tracks1 == tracks2
 
         # Third call with force - should fetch again
         tracks3 = get_cached_known_tracks(mock_fetch, force_refresh=True)
-        assert call_count == 2
+        assert call_count == 2  # Should increment to 2
         assert tracks3 != tracks1
 
 

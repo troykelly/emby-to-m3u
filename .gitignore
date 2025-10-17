@@ -11,6 +11,10 @@ e2e-test-results.json
 test-validation-report.json
 *.tmp
 
+/logs
+/docs
+/playlists
+
 # Build artifacts that should never be committed
 **/assets/index-*.js
 **/assets/index-*.css

@@ -145,11 +145,7 @@ class UploadDecision:
             'Uploading: No duplicate found [none]'
         """
         action = "Uploading" if self.should_upload else "Skipping"
-        file_info = (
-            f" (AzuraCast file: {self.azuracast_file_id})"
-            if self.azuracast_file_id
-            else ""
-        )
+        file_info = f" (AzuraCast file: {self.azuracast_file_id})" if self.azuracast_file_id else ""
         return f"{action}: {self.reason} [{self.strategy_used}]{file_info}"
 
 
@@ -223,9 +219,7 @@ class KnownTracksCache:
         """
         if self.is_expired():
             age = time.time() - self.fetched_at
-            raise RuntimeError(
-                f"Cache expired (age: {age:.1f}s, TTL: {self.ttl_seconds}s)"
-            )
+            raise RuntimeError(f"Cache expired (age: {age:.1f}s, TTL: {self.ttl_seconds}s)")
         return self.tracks
 
     def refresh(self, new_tracks: list[dict[str, Any]]) -> None:

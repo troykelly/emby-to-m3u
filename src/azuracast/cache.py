@@ -18,8 +18,7 @@ _known_tracks_cache = KnownTracksCache(tracks=[], fetched_at=0.0)
 
 
 def get_cached_known_tracks(
-    fetch_fn: Callable[[], list[dict[str, Any]]],
-    force_refresh: bool = False
+    fetch_fn: Callable[[], list[dict[str, Any]]], force_refresh: bool = False
 ) -> list[dict[str, Any]]:
     """Retrieve known tracks with automatic cache management.
 
@@ -59,8 +58,7 @@ def get_cached_known_tracks(
 
 
 def should_skip_replaygain_conflict(
-    azuracast_track: dict[str, Any],
-    source_track: dict[str, Any]
+    azuracast_track: dict[str, Any], source_track: dict[str, Any]
 ) -> bool:
     """Check if upload should be skipped due to ReplayGain conflict.
 

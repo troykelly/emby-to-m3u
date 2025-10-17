@@ -312,8 +312,12 @@ def _parse_llm_response(content: str) -> List[SelectedTrack]:
                 year=track_data.get("year"),
                 country=track_data.get("country"),
                 duration_seconds=track_data.get("duration_seconds", 0),
-                position=i + 1,
-                selection_reason=track_data.get("selection_reason", ""),
+                is_australian=track_data.get("is_australian", False),
+                rotation_category=track_data.get("rotation_category", "C"),
+                position_in_playlist=i + 1,
+                selection_reasoning=track_data.get("selection_reason", ""),
+                validation_status=track_data.get("validation_status", "pending"),
+                metadata_source=track_data.get("metadata_source", "subsonic"),
             )
             selected_tracks.append(selected_track)
 
@@ -362,16 +366,18 @@ def _validate_constraint_satisfaction(
 
     scores = []
 
-    # BPM satisfaction
-    bpm_range = criteria.bpm_range
-    bpm_tracks = [t for t in tracks if t.bpm is not None]
-    if bpm_tracks:
-        in_range = sum(
-            1 for t in bpm_tracks if t.bpm is not None and bpm_range[0] <= t.bpm <= bpm_range[1]
-        )
-        scores.append(in_range / len(bpm_tracks))
+    # BPM satisfaction (using new bpm_ranges API)
+    if criteria.bpm_ranges and len(criteria.bpm_ranges) > 0:
+        # Use first BPM range for validation
+        first_range = criteria.bpm_ranges[0]
+        bpm_tracks = [t for t in tracks if t.bpm is not None]
+        if bpm_tracks:
+            in_range = sum(
+                1 for t in bpm_tracks if t.bpm is not None and first_range.bpm_min <= t.bpm <= first_range.bpm_max
+            )
+            scores.append(in_range / len(bpm_tracks))
 
-    # Genre satisfaction
+    # Genre satisfaction (using new GenreCriteria API)
     if criteria.genre_mix:
         genre_counts: Dict[str, int] = {}
         for track in tracks:
@@ -379,7 +385,13 @@ def _validate_constraint_satisfaction(
                 genre_counts[track.genre] = genre_counts.get(track.genre, 0) + 1
 
         genre_scores = []
-        for genre, (min_pct, max_pct) in criteria.genre_mix.items():
+        for genre, criteria_obj in criteria.genre_mix.items():
+            # Calculate min/max from target_percentage and tolerance
+            target_pct = criteria_obj.target_percentage
+            tolerance = criteria_obj.tolerance
+            min_pct = target_pct - tolerance
+            max_pct = target_pct + tolerance
+
             actual_pct = genre_counts.get(genre, 0) / len(tracks)
             if min_pct <= actual_pct <= max_pct:
                 genre_scores.append(1.0)
@@ -394,10 +406,10 @@ def _validate_constraint_satisfaction(
     # Australian content satisfaction
     au_tracks = sum(1 for t in tracks if t.country == "AU")
     au_pct = au_tracks / len(tracks)
-    if au_pct >= criteria.australian_min:
+    if au_pct >= criteria.australian_content_min:
         scores.append(1.0)
     else:
-        scores.append(au_pct / criteria.australian_min)
+        scores.append(au_pct / criteria.australian_content_min)
 
     # Calculate overall satisfaction
     return sum(scores) / len(scores) if scores else 0.0

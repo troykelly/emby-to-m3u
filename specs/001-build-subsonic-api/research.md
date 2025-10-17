@@ -853,7 +853,7 @@ EMBY_API_KEY=your_api_key
 
 # Subsonic configuration (new)
 SUBSONIC_SERVER_URL=http://localhost:4533
-SUBSONIC_USERNAME=admin
+SUBSONIC_USER=admin
 SUBSONIC_PASSWORD=password
 SUBSONIC_USE_TOKEN_AUTH=true  # true/false, default: true
 SOURCE_TYPE=subsonic  # emby/subsonic/navidrome/airsonic
@@ -885,7 +885,7 @@ class SubsonicPlaylistManager(PlaylistManager):
         super().__init__(report)
         self.client = SubsonicClient(
             base_url=os.getenv('SUBSONIC_SERVER_URL'),
-            username=os.getenv('SUBSONIC_USERNAME'),
+            username=os.getenv('SUBSONIC_USER'),
             password=os.getenv('SUBSONIC_PASSWORD')
         )
 

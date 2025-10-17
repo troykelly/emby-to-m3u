@@ -1,48 +1,118 @@
 """
-AI Playlist Data Models - Modular Package Structure
+AI Playlist Models Package.
 
-This package provides all data models for LLM-driven playlist automation
-organized into focused submodules for maintainability (<500 lines each).
+This package contains all dataclasses and enumerations for the AI/ML-powered
+playlist generation system.
 
-Modules:
-    - core: Programming documents, dayparts, playlist specs, and criteria
-    - llm: LLM requests, responses, tracks, and playlists
-    - validation: Validation results and decision logging
+Core Entities:
+    - StationIdentityDocument: Authoritative programming guide with file locking
+    - DaypartSpecification: Time-bound programming segments
+    - PlaylistSpecification: Generated playlist specification
+    - TrackSelectionCriteria: Complete selection constraints
+    - SelectedTrack: Individual selected track
+    - Playlist: Complete generated playlist
+    - ConstraintRelaxation: Progressive relaxation record
+    - DecisionLog: Audit trail entry
+
+Validation:
+    - ValidationResult: Complete validation assessment
+    - ConstraintScore: Individual constraint score
+    - FlowQualityMetrics: Flow quality measurements
+
+Supporting Types:
+    - BPMRange, GenreCriteria, EraCriteria
+    - ProgrammingStructure, RotationStrategy, ContentRequirements
+    - ScheduleType, ValidationStatus, DecisionType (Enums)
 """
 
-# Import all models from submodules for backward compatibility
+# Core entity imports
 from .core import (
-    ProgrammingDocument,
-    DaypartSpec,
-    PlaylistSpec,
+    # Enumerations
+    ScheduleType,
+    ValidationStatus,
+    DecisionType,
+
+    # Supporting dataclasses
+    BPMRange,
+    SpecialtyConstraint,
+    GenreCriteria,
+    EraCriteria,
+    ProgrammingStructure,
+    RotationCategory,
+    RotationStrategy,
+    ContentRequirements,
+    GenreDefinition,
+
+    # Core entities
+    StationIdentityDocument,
+    DaypartSpecification,
     TrackSelectionCriteria,
-)
-
-from .llm import (
-    LLMTrackSelectionRequest,
-    LLMTrackSelectionResponse,
+    PlaylistSpecification,
     SelectedTrack,
+    ConstraintRelaxation,
     Playlist,
-)
-
-from .validation import (
-    ValidationResult,
     DecisionLog,
 )
 
-# Export all models at package level
+# Validation imports
+from .validation import (
+    ConstraintScore,
+    FlowQualityMetrics,
+    ValidationResult,
+    # Legacy classes for backward compatibility
+    ConstraintScores,
+    FlowMetrics,
+)
+
+# LLM-specific imports
+from .llm import (
+    LLMTrackSelectionRequest,
+    LLMTrackSelectionResponse,
+)
+
+# Backward compatibility aliases
+PlaylistSpec = PlaylistSpecification
+DaypartSpec = DaypartSpecification
+
 __all__ = [
-    # Core models
-    "ProgrammingDocument",
-    "DaypartSpec",
-    "PlaylistSpec",
+    # Enumerations
+    "ScheduleType",
+    "ValidationStatus",
+    "DecisionType",
+
+    # Supporting dataclasses
+    "BPMRange",
+    "SpecialtyConstraint",
+    "GenreCriteria",
+    "EraCriteria",
+    "ProgrammingStructure",
+    "RotationCategory",
+    "RotationStrategy",
+    "ContentRequirements",
+    "GenreDefinition",
+
+    # Core entities
+    "StationIdentityDocument",
+    "DaypartSpecification",
     "TrackSelectionCriteria",
-    # LLM models
+    "PlaylistSpecification",
+    "SelectedTrack",
+    "ConstraintRelaxation",
+    "Playlist",
+    "DecisionLog",
+
+    # Validation
+    "ConstraintScore",
+    "FlowQualityMetrics",
+    "ValidationResult",
+
+    # LLM types
     "LLMTrackSelectionRequest",
     "LLMTrackSelectionResponse",
-    "SelectedTrack",
-    "Playlist",
-    # Validation models
-    "ValidationResult",
-    "DecisionLog",
+
+    # Legacy (backward compatibility)
+    "ConstraintScores",
+    "FlowMetrics",
+    "PlaylistSpec",
+    "DaypartSpec",
 ]

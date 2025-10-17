@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 import uuid
 
-from .core import TrackSelectionCriteria, PlaylistSpec
+from .core import TrackSelectionCriteria, PlaylistSpecification
 from .validation import ValidationResult
 from ._validation_helpers import validate_playlist_name
 
@@ -57,9 +57,9 @@ class LLMTrackSelectionRequest:
         if not 0 < self.max_cost_usd <= 0.50:
             raise ValueError("Max cost must be > 0 and ≤ 0.50")
 
-        # Timeout validation
-        if not 0 < self.timeout_seconds <= 300:
-            raise ValueError("Timeout must be > 0 and ≤ 300")
+        # Timeout validation (increased to 45min for GPT-5 latency)
+        if not 0 < self.timeout_seconds <= 2700:
+            raise ValueError("Timeout must be > 0 and ≤ 2700")
 
 
 @dataclass
@@ -172,7 +172,7 @@ class Playlist:
     id: str
     name: str
     tracks: List[SelectedTrack]
-    spec: PlaylistSpec
+    spec: PlaylistSpecification
     validation_result: ValidationResult
     created_at: datetime = field(default_factory=datetime.now)
     synced_at: Optional[datetime] = None
@@ -200,9 +200,9 @@ class Playlist:
         # Validation result must pass
         if not self.validation_result.is_valid():
             raise ValueError(
-                f"ValidationResult must pass (constraint: "
-                f"{self.validation_result.constraint_scores.constraint_satisfaction}, "
-                f"flow: {self.validation_result.flow_metrics.flow_quality_score})"
+                f"ValidationResult must pass (overall_status: "
+                f"{self.validation_result.overall_status}, "
+                f"compliance: {self.validation_result.compliance_percentage:.1%})"
             )
 
         # Created at validation

@@ -50,6 +50,12 @@ max-line-length = 100
 disable = [
     "C0114",  # missing-module-docstring (we'll add progressively)
     "R0903",  # too-few-public-methods (common in data classes)
+    "W1203",  # logging-fstring-interpolation (f-strings in logging are acceptable)
+    "W0611",  # unused-import (handled by other tools)
+    "R0912",  # too-many-branches (complexity warnings - can refactor later)
+    "R0915",  # too-many-statements (complexity warnings - can refactor later)
+    "R0902",  # too-many-instance-attributes (common in data models)
+    "W1404",  # implicit-str-concat (acceptable in some contexts)
 ]
 
 [tool.pylint.design]

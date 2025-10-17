@@ -98,9 +98,7 @@ class LastFMCache:
             return similar_tracks
         return None
 
-    def set(
-        self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]]
-    ) -> None:
+    def set(self, artist_name: str, track_name: str, similar_tracks: List[Dict[str, str]]) -> None:
         """Caches similar tracks for a given artist and track.
 
         Args:
@@ -151,9 +149,7 @@ class LastFM:
                 self.network
             )  # Set the network for the cache in a thread-safe manner
 
-    def get_similar_tracks(
-        self, artist_name: str, track_name: str
-    ) -> List[Dict[str, str]]:
+    def get_similar_tracks(self, artist_name: str, track_name: str) -> List[Dict[str, str]]:
         """Gets similar tracks from Last.fm based on a given track.
 
         Args:
@@ -215,9 +211,7 @@ class LastFM:
         Args:
             network: The pylast LastFMNetwork instance to set.
         """
-        self.cache.set_network(
-            network
-        )  # Set the network for the cache in a thread-safe manner
+        self.cache.set_network(network)  # Set the network for the cache in a thread-safe manner
 
     def __enter__(self) -> "LastFM":
         """Enter the runtime context for this object."""

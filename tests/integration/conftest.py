@@ -4,11 +4,34 @@ import os
 import pytest
 from pathlib import Path
 from dotenv import load_dotenv
+from src.subsonic.client import SubsonicClient
 
 # Load .env file from project root
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
+
+
+# Monkey-patch SubsonicClient to make search_tracks async
+# This allows tests to use `await subsonic_client.search_tracks()`
+# without changing test code
+_original_search_tracks = SubsonicClient.search_tracks
+
+
+async def _async_search_tracks_wrapper(self, query="", limit=500, genre_filter=None):
+    """Async wrapper for search_tracks to enable await in tests."""
+    import asyncio
+    return await asyncio.to_thread(
+        _original_search_tracks,
+        self,
+        query=query,
+        limit=limit,
+        genre_filter=genre_filter,
+    )
+
+
+# Apply monkey-patch
+SubsonicClient.search_tracks = _async_search_tracks_wrapper
 
 
 @pytest.fixture(scope="session")
@@ -28,7 +51,7 @@ def azuracast_config():
     return {
         "host": os.getenv("AZURACAST_HOST"),
         "api_key": os.getenv("AZURACAST_API_KEY"),
-        "station_id": os.getenv("AZURACAST_STATION_ID"),
+        "station_id": os.getenv("AZURACAST_STATIONID"),  # Using AZURACAST_STATIONID not AZURACAST_STATIONID
     }
 
 

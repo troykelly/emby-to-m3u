@@ -37,13 +37,14 @@ class SubsonicConfig:
             raise ValueError("Either password or api_key must be provided")
 
         # Warn about insecure HTTP connections
-        if not self.url.startswith('https://'):
+        if not self.url.startswith("https://"):
             import warnings
+
             warnings.warn(
                 "Using HTTP instead of HTTPS for Subsonic connection. "
                 "Credentials will be transmitted insecurely.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
 
@@ -125,14 +126,14 @@ class SubsonicTrack:
     created: str
 
     # NEW: Critical fields for ID3 browsing (P0)
-    parent: Optional[str] = None       # Parent directory/album ID for navigation
-    albumId: Optional[str] = None      # Album ID for ID3 navigation
-    artistId: Optional[str] = None     # Artist ID for ID3 navigation
+    parent: Optional[str] = None  # Parent directory/album ID for navigation
+    albumId: Optional[str] = None  # Album ID for ID3 navigation
+    artistId: Optional[str] = None  # Artist ID for ID3 navigation
 
     # NEW: Type discrimination (P0)
-    isDir: bool = False                # Distinguish directories from files
-    isVideo: bool = False              # Filter video content
-    type: Optional[str] = None         # "music", "podcast", "audiobook"
+    isDir: bool = False  # Distinguish directories from files
+    isVideo: bool = False  # Filter video content
+    type: Optional[str] = None  # "music", "podcast", "audiobook"
 
     # Optional fields
     genre: Optional[str] = None
