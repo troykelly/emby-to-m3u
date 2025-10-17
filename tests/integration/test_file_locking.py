@@ -195,6 +195,10 @@ class TestFileLocking:
         - Station identity file properly locked during reads
         - Decision logs written without conflicts
         """
+        # Create a copy of station identity in tmp_path to avoid permission issues
+        test_identity = tmp_path / "station-identity.md"
+        test_identity.write_text(station_identity_path.read_text())
+
         # Act - Start multiple processes
         output_dir = tmp_path / "playlists"
         output_dir.mkdir()
@@ -204,7 +208,7 @@ class TestFileLocking:
         with multiprocessing.Pool(processes=num_processes) as pool:
             results = pool.starmap(
                 _generate_playlist_process,
-                [(i, output_dir, station_identity_path) for i in range(num_processes)]
+                [(i, output_dir, test_identity) for i in range(num_processes)]
             )
 
         # Assert - All processes completed
