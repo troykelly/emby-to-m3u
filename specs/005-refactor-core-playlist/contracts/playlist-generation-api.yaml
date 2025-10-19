@@ -1,0 +1,716 @@
+openapi: 3.0.3
+info:
+  title: AI/ML Playlist Generation API
+  description: |
+    API for AI/ML-powered playlist generation with LLM track selection,
+    cost tracking, and validation (FR-005 to FR-009, FR-030).
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+paths:
+  /playlists/generate:
+    post:
+      summary: Generate playlist using AI/ML track selection
+      description: |
+        Generate complete playlist from daypart specification using AI/ML
+        to select tracks with explainable reasoning (FR-005, FR-006, FR-007, FR-008).
+        Implements cost controls with configurable budget mode and allocation (FR-009, FR-030).
+      operationId: generatePlaylist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaylistGenerationRequest'
+      responses:
+        '200':
+          description: Playlist generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistGenerationResponse'
+        '400':
+          description: Invalid generation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Cost budget exceeded (hard limit mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostBudgetExceeded'
+        '500':
+          description: Generation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /playlists/{playlist_id}:
+    get:
+      summary: Retrieve generated playlist
+      description: Get complete playlist with all tracks and metadata
+      operationId: getPlaylist
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Playlist retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playlist'
+        '404':
+          description: Playlist not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /playlists/{playlist_id}/validate:
+    post:
+      summary: Validate playlist against station identity criteria
+      description: |
+        Perform complete validation of playlist compliance with station identity
+        requirements (FR-025, FR-026). Returns constraint satisfaction scores and
+        quality metrics.
+      operationId: validatePlaylist
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Validation complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '404':
+          description: Playlist not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /playlists/{playlist_id}/export:
+    get:
+      summary: Export playlist to M3U format
+      description: |
+        Export playlist in M3U format compatible with AzuraCast sync workflow (FR-016).
+      operationId: exportPlaylist
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [m3u, m3u8, extm3u]
+            default: extm3u
+      responses:
+        '200':
+          description: M3U playlist
+          content:
+            audio/x-mpegurl:
+              schema:
+                type: string
+                example: |
+                  #EXTM3U
+                  #PLAYLIST:Morning Drive: Production Call - 2025-10-06
+                  #EXTINF:185,Tame Impala - The Less I Know The Better
+                  subsonic:track:12345
+        '404':
+          description: Playlist not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /playlists/{playlist_id}/decision-log:
+    get:
+      summary: Retrieve AI decision log for playlist
+      description: |
+        Get complete audit trail of AI/ML selection process for transparency
+        and debugging (FR-018, FR-027).
+      operationId: getDecisionLog
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: decision_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [track_selection, validation, error, relaxation, metadata_retrieval]
+          description: Filter by decision type
+      responses:
+        '200':
+          description: Decision log retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  playlist_id:
+                    type: string
+                    format: uuid
+                  total_entries:
+                    type: integer
+                  total_cost:
+                    type: string
+                    description: Decimal string
+                  total_execution_time_ms:
+                    type: integer
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DecisionLogEntry'
+
+  /playlists/batch-generate:
+    post:
+      summary: Generate multiple playlists in batch
+      description: |
+        Generate multiple playlists (e.g., full day programming) with shared
+        cost budget allocation. Implements dynamic or equal budget distribution
+        based on configuration (FR-009, FR-030).
+      operationId: batchGeneratePlaylists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchGenerationRequest'
+      responses:
+        '200':
+          description: Batch generation initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    format: uuid
+                  total_playlists:
+                    type: integer
+                  estimated_cost:
+                    type: string
+                  budget_mode:
+                    type: string
+                    enum: [hard, suggested]
+                  allocation_strategy:
+                    type: string
+                    enum: [dynamic, equal]
+        '402':
+          description: Estimated cost exceeds hard budget limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostBudgetExceeded'
+
+  /playlists/batch/{batch_id}/status:
+    get:
+      summary: Get batch generation status
+      description: Monitor progress of batch playlist generation
+      operationId: getBatchStatus
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchGenerationStatus'
+
+components:
+  schemas:
+    PlaylistGenerationRequest:
+      type: object
+      properties:
+        daypart_id:
+          type: string
+          format: uuid
+          description: Source daypart specification
+        generation_date:
+          type: string
+          format: date
+          description: Date this playlist is for
+        cost_budget:
+          type: string
+          nullable: true
+          description: Allocated cost budget (decimal string)
+        budget_mode:
+          type: string
+          enum: [hard, suggested]
+          default: suggested
+          description: Budget enforcement mode (FR-009)
+        allow_constraint_relaxation:
+          type: boolean
+          default: true
+          description: Allow progressive constraint relaxation (FR-028)
+        max_relaxation_steps:
+          type: integer
+          default: 3
+          minimum: 0
+          description: Maximum relaxation iterations
+      required:
+        - daypart_id
+        - generation_date
+
+    PlaylistGenerationResponse:
+      type: object
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [completed, completed_with_warnings, failed]
+        track_count:
+          type: integer
+        cost_actual:
+          type: string
+          description: Actual LLM cost (decimal string)
+        cost_budget:
+          type: string
+          nullable: true
+          description: Allocated budget (decimal string)
+        budget_exceeded:
+          type: boolean
+        generation_time_seconds:
+          type: number
+          format: float
+        constraint_relaxations_applied:
+          type: integer
+        validation_summary:
+          type: object
+          properties:
+            overall_status:
+              type: string
+              enum: [pass, fail, warning]
+            compliance_percentage:
+              type: number
+              format: float
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+        - playlist_id
+        - name
+        - status
+        - track_count
+        - cost_actual
+        - generation_time_seconds
+
+    BatchGenerationRequest:
+      type: object
+      properties:
+        daypart_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+        generation_date:
+          type: string
+          format: date
+        total_cost_budget:
+          type: string
+          nullable: true
+          description: Total budget for all playlists (decimal string)
+        budget_mode:
+          type: string
+          enum: [hard, suggested]
+          default: suggested
+          description: Budget enforcement mode (FR-009)
+        allocation_strategy:
+          type: string
+          enum: [dynamic, equal]
+          default: dynamic
+          description: Budget allocation strategy (FR-030)
+        allow_constraint_relaxation:
+          type: boolean
+          default: true
+      required:
+        - daypart_ids
+        - generation_date
+
+    BatchGenerationStatus:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, in_progress, completed, failed]
+        playlists_requested:
+          type: integer
+        playlists_completed:
+          type: integer
+        playlists_failed:
+          type: integer
+        total_cost_actual:
+          type: string
+          description: Cumulative cost (decimal string)
+        total_cost_budget:
+          type: string
+          nullable: true
+          description: Allocated budget (decimal string)
+        budget_exceeded:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        playlist_results:
+          type: array
+          items:
+            type: object
+            properties:
+              playlist_id:
+                type: string
+                format: uuid
+              daypart_id:
+                type: string
+                format: uuid
+              status:
+                type: string
+                enum: [pending, in_progress, completed, failed]
+              cost_allocated:
+                type: string
+              cost_actual:
+                type: string
+                nullable: true
+              error:
+                type: string
+                nullable: true
+
+    Playlist:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        specification_id:
+          type: string
+          format: uuid
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedTrack'
+        validation_result:
+          $ref: '#/components/schemas/ValidationResult'
+        created_at:
+          type: string
+          format: date-time
+        cost_actual:
+          type: string
+          description: Decimal string
+        generation_time_seconds:
+          type: number
+          format: float
+        constraint_relaxations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConstraintRelaxation'
+      required:
+        - id
+        - name
+        - specification_id
+        - tracks
+        - validation_result
+        - created_at
+        - cost_actual
+        - generation_time_seconds
+
+    SelectedTrack:
+      type: object
+      properties:
+        track_id:
+          type: string
+        title:
+          type: string
+        artist:
+          type: string
+        album:
+          type: string
+        bpm:
+          type: integer
+          nullable: true
+        genre:
+          type: string
+          nullable: true
+        year:
+          type: integer
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        duration_seconds:
+          type: integer
+        is_australian:
+          type: boolean
+        rotation_category:
+          type: string
+        position_in_playlist:
+          type: integer
+        selection_reasoning:
+          type: string
+          description: AI explanation for selection (FR-007)
+        validation_status:
+          type: string
+          enum: [pass, fail, warning]
+        validation_notes:
+          type: array
+          items:
+            type: string
+        metadata_source:
+          type: string
+          enum: [library, lastfm, aubio]
+      required:
+        - track_id
+        - title
+        - artist
+        - album
+        - duration_seconds
+        - is_australian
+        - rotation_category
+        - position_in_playlist
+        - selection_reasoning
+        - validation_status
+        - metadata_source
+
+    ValidationResult:
+      type: object
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        overall_status:
+          type: string
+          enum: [pass, fail, warning]
+        constraint_scores:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ConstraintScore'
+        flow_quality_metrics:
+          $ref: '#/components/schemas/FlowQualityMetrics'
+        compliance_percentage:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        validated_at:
+          type: string
+          format: date-time
+        gap_analysis:
+          type: array
+          items:
+            type: string
+      required:
+        - playlist_id
+        - overall_status
+        - constraint_scores
+        - flow_quality_metrics
+        - compliance_percentage
+        - validated_at
+
+    ConstraintScore:
+      type: object
+      properties:
+        constraint_name:
+          type: string
+        target_value:
+          type: number
+          format: float
+        actual_value:
+          type: number
+          format: float
+        tolerance:
+          type: number
+          format: float
+        is_compliant:
+          type: boolean
+        deviation_percentage:
+          type: number
+          format: float
+      required:
+        - constraint_name
+        - target_value
+        - actual_value
+        - tolerance
+        - is_compliant
+        - deviation_percentage
+
+    FlowQualityMetrics:
+      type: object
+      properties:
+        bpm_variance:
+          type: number
+          format: float
+          description: Standard deviation of BPM
+        bpm_progression_coherence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: How well BPM follows target progression
+        energy_consistency:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        genre_diversity_index:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Shannon entropy normalized
+        overall_quality_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+      required:
+        - bpm_variance
+        - bpm_progression_coherence
+        - energy_consistency
+        - genre_diversity_index
+        - overall_quality_score
+
+    ConstraintRelaxation:
+      type: object
+      properties:
+        step:
+          type: integer
+        constraint_type:
+          type: string
+          enum: [bpm, genre, era]
+        original_value:
+          type: string
+        relaxed_value:
+          type: string
+        reason:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - step
+        - constraint_type
+        - original_value
+        - relaxed_value
+        - reason
+        - timestamp
+
+    DecisionLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        playlist_id:
+          type: string
+          format: uuid
+        decision_type:
+          type: string
+          enum: [track_selection, validation, error, relaxation, metadata_retrieval]
+        timestamp:
+          type: string
+          format: date-time
+        decision_data:
+          type: object
+          description: Type-specific decision data
+        cost_incurred:
+          type: string
+          description: Decimal string
+        execution_time_ms:
+          type: integer
+      required:
+        - id
+        - playlist_id
+        - decision_type
+        - timestamp
+        - decision_data
+        - cost_incurred
+        - execution_time_ms
+
+    CostBudgetExceeded:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "cost_budget_exceeded"
+        message:
+          type: string
+        budget_mode:
+          type: string
+          enum: [hard, suggested]
+        cost_budget:
+          type: string
+        cost_actual:
+          type: string
+        cost_overage:
+          type: string
+        playlists_completed:
+          type: integer
+        playlists_failed:
+          type: integer
+      required:
+        - error
+        - message
+        - budget_mode
+        - cost_budget
+        - cost_actual
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required:
+        - error
+        - message

@@ -14,10 +14,11 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from playlist.main import PlaylistManager
 
+
 class Track(dict):
     """Represents an audio track with extended functionality for downloading and ReplayGain analysis."""
 
-    def __init__(self, track_data: dict, playlist_manager: 'PlaylistManager') -> None:
+    def __init__(self, track_data: dict, playlist_manager: "PlaylistManager") -> None:
         """Initializes the Track with metadata and a reference to PlaylistManager.
 
         Args:
@@ -41,9 +42,9 @@ class Track(dict):
         Returns:
             Binary content of the track's file.
         """
-        track_id = self['Id']
-        emby_server_url = os.getenv('EMBY_SERVER_URL')
-        emby_api_key = os.getenv('EMBY_API_KEY')
+        track_id = self["Id"]
+        emby_server_url = os.getenv("EMBY_SERVER_URL")
+        emby_api_key = os.getenv("EMBY_API_KEY")
 
         if not emby_server_url or not emby_api_key:
             raise ValueError("Emby server URL and API key are required to fetch track content.")
@@ -65,7 +66,7 @@ class Track(dict):
             return data
 
     def _check_and_apply_replaygain(self) -> None:
-        file_format = self['Path'].split('.')[-1].lower()
+        file_format = self["Path"].split(".")[-1].lower()
 
         if not has_replaygain_metadata(self.content, file_format):
             self.content = BytesIO(process_replaygain(self.content.getvalue(), file_format))

@@ -1,0 +1,432 @@
+openapi: 3.0.3
+info:
+  title: Station Identity API
+  description: API for parsing and managing Production City Radio station identity document
+  version: 1.0.0
+  contact:
+    name: Production City Radio Engineering
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+paths:
+  /station-identity/load:
+    post:
+      summary: Load and parse station-identity.md document
+      description: |
+        Loads the station identity document from filesystem, parses it into structured data,
+        and validates all programming specifications. Document is locked during generation batches.
+      operationId: loadStationIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                document_path:
+                  type: string
+                  description: Absolute path to station-identity.md file
+                  example: "/workspaces/emby-to-m3u/station-identity.md"
+              required:
+                - document_path
+      responses:
+        '200':
+          description: Station identity loaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StationIdentityDocument'
+        '400':
+          description: Invalid document path or parsing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Station identity document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /station-identity/lock:
+    post:
+      summary: Acquire exclusive lock on station identity document
+      description: |
+        Acquires exclusive lock on station-identity.md to prevent concurrent modifications
+        during playlist generation batch (FR-031).
+      operationId: lockStationIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                  description: Generation session identifier
+              required:
+                - session_id
+      responses:
+        '200':
+          description: Lock acquired successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lock_id:
+                    type: string
+                    format: uuid
+                  lock_timestamp:
+                    type: string
+                    format: date-time
+                  locked_by:
+                    type: string
+        '409':
+          description: Document already locked by another session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /station-identity/unlock:
+    post:
+      summary: Release lock on station identity document
+      description: Releases exclusive lock after playlist generation batch completes
+      operationId: unlockStationIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lock_id:
+                  type: string
+                  format: uuid
+              required:
+                - lock_id
+      responses:
+        '200':
+          description: Lock released successfully
+        '404':
+          description: Lock not found or already released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /station-identity/dayparts:
+    get:
+      summary: Get all daypart specifications
+      description: Returns all daypart specifications for given schedule type
+      operationId: getDayparts
+      parameters:
+        - name: schedule_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [weekday, saturday, sunday]
+          description: Filter by schedule type
+      responses:
+        '200':
+          description: Daypart specifications retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DaypartSpecification'
+
+components:
+  schemas:
+    StationIdentityDocument:
+      type: object
+      properties:
+        document_path:
+          type: string
+        lock_id:
+          type: string
+          format: uuid
+          nullable: true
+        lock_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        locked_by:
+          type: string
+          nullable: true
+        programming_structures:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProgrammingStructure'
+        rotation_strategy:
+          $ref: '#/components/schemas/RotationStrategy'
+        content_requirements:
+          $ref: '#/components/schemas/ContentRequirements'
+        genre_definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreDefinition'
+        version:
+          type: string
+          description: SHA-256 hash of document content
+        loaded_at:
+          type: string
+          format: date-time
+      required:
+        - document_path
+        - programming_structures
+        - rotation_strategy
+        - content_requirements
+        - genre_definitions
+        - version
+        - loaded_at
+
+    ProgrammingStructure:
+      type: object
+      properties:
+        schedule_type:
+          type: string
+          enum: [weekday, saturday, sunday]
+        dayparts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaypartSpecification'
+      required:
+        - schedule_type
+        - dayparts
+
+    DaypartSpecification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Morning Drive: Production Call"
+        schedule_type:
+          type: string
+          enum: [weekday, saturday, sunday]
+        time_start:
+          type: string
+          format: time
+          example: "06:00:00"
+        time_end:
+          type: string
+          format: time
+          example: "10:00:00"
+        duration_hours:
+          type: number
+          format: float
+          example: 4.0
+        target_demographic:
+          type: string
+        bpm_progression:
+          type: array
+          items:
+            $ref: '#/components/schemas/BPMRange'
+        genre_mix:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+            minimum: 0.0
+            maximum: 1.0
+          example:
+            "Contemporary Alternative": 0.25
+            "Electronic/Downtempo": 0.20
+            "Quality Pop/R&B": 0.20
+        era_distribution:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+            minimum: 0.0
+            maximum: 1.0
+          example:
+            "Current": 0.40
+            "Recent": 0.35
+            "Modern Classics": 0.20
+            "Throwbacks": 0.05
+        mood_guidelines:
+          type: array
+          items:
+            type: string
+          example: ["uplifting", "positive", "forward-moving"]
+        mood_exclusions:
+          type: array
+          items:
+            type: string
+          example: ["melancholy", "aggressive"]
+        content_focus:
+          type: string
+        rotation_percentages:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        tracks_per_hour:
+          type: object
+          properties:
+            min:
+              type: integer
+              minimum: 1
+            max:
+              type: integer
+              minimum: 1
+          required:
+            - min
+            - max
+          example:
+            min: 12
+            max: 14
+        specialty_constraints:
+          $ref: '#/components/schemas/SpecialtyConstraint'
+      required:
+        - id
+        - name
+        - schedule_type
+        - time_start
+        - time_end
+        - duration_hours
+        - target_demographic
+        - bpm_progression
+        - genre_mix
+        - era_distribution
+        - mood_guidelines
+        - content_focus
+        - rotation_percentages
+        - tracks_per_hour
+
+    BPMRange:
+      type: object
+      properties:
+        time_start:
+          type: string
+          format: time
+        time_end:
+          type: string
+          format: time
+        bpm_min:
+          type: integer
+          minimum: 60
+          maximum: 200
+        bpm_max:
+          type: integer
+          minimum: 60
+          maximum: 200
+      required:
+        - time_start
+        - time_end
+        - bpm_min
+        - bpm_max
+      example:
+        time_start: "06:00:00"
+        time_end: "07:00:00"
+        bpm_min: 90
+        bpm_max: 115
+
+    SpecialtyConstraint:
+      type: object
+      properties:
+        constraint_type:
+          type: string
+          enum: [australian_only, genre_only, theme_based]
+        description:
+          type: string
+        parameters:
+          type: object
+      required:
+        - constraint_type
+        - description
+        - parameters
+
+    RotationStrategy:
+      type: object
+      properties:
+        categories:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/RotationCategory'
+      required:
+        - categories
+
+    RotationCategory:
+      type: object
+      properties:
+        name:
+          type: string
+          enum: [Power, Medium, Light, Recurrent, Library]
+        spins_per_week:
+          type: integer
+          minimum: 0
+        lifecycle_weeks:
+          type: integer
+          minimum: 1
+      required:
+        - name
+        - spins_per_week
+        - lifecycle_weeks
+
+    ContentRequirements:
+      type: object
+      properties:
+        australian_content_min:
+          type: number
+          format: float
+          minimum: 0.30
+          maximum: 1.0
+          example: 0.30
+        australian_content_target:
+          type: number
+          format: float
+          minimum: 0.30
+          maximum: 1.0
+          example: 0.35
+      required:
+        - australian_content_min
+        - australian_content_target
+
+    GenreDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parent_genre:
+          type: string
+          nullable: true
+        typical_bpm_range:
+          type: object
+          properties:
+            min:
+              type: integer
+            max:
+              type: integer
+      required:
+        - name
+        - description
+        - typical_bpm_range
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required:
+        - error
+        - message

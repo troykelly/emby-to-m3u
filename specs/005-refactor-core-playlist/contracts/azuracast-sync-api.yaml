@@ -1,0 +1,305 @@
+openapi: 3.0.3
+info:
+  title: AzuraCast Sync API
+  description: |
+    API for syncing generated playlists to AzuraCast broadcast automation system.
+    Supports dry-run testing and live sync (FR-016).
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+paths:
+  /azuracast/sync:
+    post:
+      summary: Sync playlist to AzuraCast
+      description: |
+        Push generated playlist to AzuraCast station. Supports dry-run mode
+        for testing without actual sync.
+      operationId: syncPlaylist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '200':
+          description: Sync completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400':
+          description: Invalid sync request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Sync failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: AzuraCast unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /azuracast/batch-sync:
+    post:
+      summary: Sync multiple playlists in batch
+      description: Sync full day's programming to AzuraCast
+      operationId: batchSyncPlaylists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                playlist_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                dry_run:
+                  type: boolean
+                  default: false
+                replace_existing:
+                  type: boolean
+                  default: false
+              required:
+                - playlist_ids
+      responses:
+        '200':
+          description: Batch sync completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:
+                    type: string
+                    format: uuid
+                  total_playlists:
+                    type: integer
+                  successful_syncs:
+                    type: integer
+                  failed_syncs:
+                    type: integer
+                  dry_run:
+                    type: boolean
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SyncResponse'
+
+  /azuracast/verify:
+    post:
+      summary: Verify AzuraCast connectivity
+      description: Test connection to AzuraCast API and verify credentials
+      operationId: verifyAzuraCastConnection
+      responses:
+        '200':
+          description: Connection successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                  azuracast_version:
+                    type: string
+                  station_name:
+                    type: string
+                  station_id:
+                    type: integer
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: AzuraCast unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /azuracast/playlists:
+    get:
+      summary: List AzuraCast playlists
+      description: Retrieve all playlists from AzuraCast station
+      operationId: listAzuraCastPlaylists
+      responses:
+        '200':
+          description: Playlists retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AzuraCastPlaylist'
+
+components:
+  schemas:
+    SyncRequest:
+      type: object
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+          description: Generated playlist to sync
+        azuracast_playlist_name:
+          type: string
+          description: Target playlist name in AzuraCast
+        dry_run:
+          type: boolean
+          default: false
+          description: Test sync without actually pushing to AzuraCast
+        replace_existing:
+          type: boolean
+          default: false
+          description: Replace existing playlist or merge
+        schedule_config:
+          $ref: '#/components/schemas/ScheduleConfig'
+      required:
+        - playlist_id
+        - azuracast_playlist_name
+
+    ScheduleConfig:
+      type: object
+      properties:
+        schedule_type:
+          type: string
+          enum: [once, repeating, custom]
+        start_time:
+          type: string
+          format: time
+          description: Start time for playlist
+        end_time:
+          type: string
+          format: time
+          description: End time for playlist
+        days_of_week:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          description: Days of week (0=Monday, 6=Sunday)
+        weight:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Playlist weight in rotation
+      required:
+        - schedule_type
+
+    SyncResponse:
+      type: object
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        azuracast_playlist_id:
+          type: integer
+          nullable: true
+        azuracast_playlist_name:
+          type: string
+        status:
+          type: string
+          enum: [success, failed, dry_run]
+        dry_run:
+          type: boolean
+        tracks_synced:
+          type: integer
+        tracks_failed:
+          type: integer
+        sync_duration_seconds:
+          type: number
+          format: float
+        synced_at:
+          type: string
+          format: date-time
+        warnings:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
+        azuracast_url:
+          type: string
+          nullable: true
+          description: URL to playlist in AzuraCast UI
+      required:
+        - playlist_id
+        - azuracast_playlist_name
+        - status
+        - dry_run
+        - tracks_synced
+        - tracks_failed
+
+    AzuraCastPlaylist:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [default, once_per_x_songs, once_per_x_minutes, once_per_hour, custom]
+        source:
+          type: string
+          enum: [songs, remote_url]
+        order:
+          type: string
+          enum: [shuffle, random, sequential]
+        is_enabled:
+          type: boolean
+        weight:
+          type: integer
+        schedule_items:
+          type: array
+          items:
+            type: object
+            properties:
+              start_time:
+                type: integer
+                description: Unix timestamp
+              end_time:
+                type: integer
+                description: Unix timestamp
+              days:
+                type: array
+                items:
+                  type: integer
+        num_songs:
+          type: integer
+          description: Number of songs in playlist
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required:
+        - error
+        - message

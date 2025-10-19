@@ -298,7 +298,7 @@ class TestEdgeCases:
     def test_empty_password(self):
         """Test token generation with empty password."""
         # SubsonicConfig should raise ValueError for empty password
-        with pytest.raises(ValueError, match="username and password are required"):
+        with pytest.raises(ValueError, match="Either password or api_key must be provided"):
             SubsonicConfig(
                 url="https://music.example.com",
                 username="testuser",
@@ -308,7 +308,7 @@ class TestEdgeCases:
     def test_empty_username(self):
         """Test token generation with empty username."""
         # SubsonicConfig should raise ValueError for empty username
-        with pytest.raises(ValueError, match="username and password are required"):
+        with pytest.raises(ValueError, match="username is required"):
             SubsonicConfig(
                 url="https://music.example.com",
                 username="",
@@ -359,7 +359,7 @@ class TestRealServerIntegration:
 
     These tests require:
     - SUBSONIC_URL=https://music.mctk.co
-    - SUBSONIC_USERNAME (from .env)
+    - SUBSONIC_USER (from .env)
     - SUBSONIC_PASSWORD (from .env)
 
     Run with: pytest -m integration tests/test_subsonic_auth.py
@@ -379,7 +379,7 @@ class TestRealServerIntegration:
             pass
 
         url = os.getenv("SUBSONIC_URL", "https://music.mctk.co")
-        username = os.getenv("SUBSONIC_USER") or os.getenv("SUBSONIC_USERNAME")
+        username = os.getenv("SUBSONIC_USER") or os.getenv("SUBSONIC_USER")
         password = os.getenv("SUBSONIC_PASSWORD")
 
         if not username or not password:

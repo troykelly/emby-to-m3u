@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from decimal import Decimal
 import json
 
 from .track_selector import select_tracks_with_llm
@@ -81,14 +82,13 @@ async def batch_track_selection(
         logger.info("Processing playlist %d/%d: %s", i, len(playlist_specs), spec.name)
 
         try:
-            # Calculate target track count based on duration and tracks per hour
-            duration_hours = spec.target_duration_minutes / 60.0
-            target_track_count = int(spec.daypart.tracks_per_hour * duration_hours)
+            # Use the target track count from the spec (already calculated by playlist planner)
+            target_track_count = spec.target_track_count_min
 
             # Build LLM track selection request
             request = LLMTrackSelectionRequest(
                 playlist_id=spec.id,
-                criteria=spec.track_criteria,
+                criteria=spec.track_selection_criteria,
                 target_track_count=target_track_count,
                 max_cost_usd=cost_per_playlist,
                 timeout_seconds=60,
@@ -112,17 +112,19 @@ async def batch_track_selection(
             # Validate playlist
             validation_result = validate_playlist(
                 tracks=response.selected_tracks,
-                criteria=spec.track_criteria,
+                criteria=spec.track_selection_criteria,
             )
 
             # Create playlist object
             playlist = Playlist(
                 id=spec.id,
                 name=spec.name,
+                specification_id=spec.id,
                 tracks=response.selected_tracks,
-                spec=spec,
                 validation_result=validation_result,
                 created_at=datetime.now(),
+                cost_actual=Decimal(str(response.cost_usd)),
+                generation_time_seconds=response.execution_time_seconds,
             )
 
             playlists.append(playlist)
@@ -131,7 +133,7 @@ async def batch_track_selection(
             decision_logger.log_decision(
                 decision_type="track_selection",
                 playlist_name=spec.name,
-                criteria=serialize_criteria(spec.track_criteria),
+                criteria=serialize_criteria(spec.track_selection_criteria),
                 selected_tracks=serialize_tracks(response.selected_tracks),
                 validation_result=serialize_validation(validation_result),
                 metadata={
@@ -150,7 +152,7 @@ async def batch_track_selection(
             decision_logger.log_decision(
                 decision_type="track_selection",
                 playlist_name=spec.name,
-                criteria=serialize_criteria(spec.track_criteria),
+                criteria=serialize_criteria(spec.track_selection_criteria),
                 selected_tracks=[],
                 validation_result={},
                 metadata={
@@ -167,24 +169,45 @@ async def batch_track_selection(
 
 def save_playlist_file(playlist: Playlist, output_dir: Path) -> Path:
     """
-    Save playlist to JSON file.
+    Save playlist to M3U and JSON files.
 
     Args:
         playlist: Playlist to save
         output_dir: Output directory
 
     Returns:
-        Path to saved file
+        Path to saved M3U file
     """
-    output_file = output_dir / f"{playlist.name}.json"
+    # Save M3U playlist file using Playlist.to_m3u() method
+    m3u_file = output_dir / f"{playlist.name}.m3u"
+    m3u_content = playlist.to_m3u()
+
+    with open(m3u_file, "w", encoding="utf-8") as f:
+        f.write(m3u_content)
+
+    # Save JSON metadata file with validation results
+    json_file = output_dir / f"{playlist.name}.json"
+
+    # Extract constraint scores from new ValidationResult API
+    constraint_scores_dict = {}
+    for key, score in playlist.validation_result.constraint_scores.items():
+        constraint_scores_dict[key] = {
+            "constraint_name": score.constraint_name,
+            "target_value": float(score.target_value),
+            "actual_value": float(score.actual_value),
+            "is_compliant": score.is_compliant,
+            "deviation_percentage": float(score.deviation_percentage),
+        }
 
     playlist_data = {
-        "id": playlist.id,
+        "id": str(playlist.id),
         "name": playlist.name,
         "created_at": playlist.created_at.isoformat(),
+        "cost_actual": str(playlist.cost_actual),
+        "generation_time_seconds": playlist.generation_time_seconds,
         "tracks": [
             {
-                "position": track.position,
+                "position": track.position_in_playlist,
                 "track_id": track.track_id,
                 "title": track.title,
                 "artist": track.artist,
@@ -194,36 +217,32 @@ def save_playlist_file(playlist: Playlist, output_dir: Path) -> Path:
                 "year": track.year,
                 "country": track.country,
                 "duration_seconds": track.duration_seconds,
-                "selection_reason": track.selection_reason,
+                "selection_reason": getattr(track, "selection_reason", ""),
             }
             for track in playlist.tracks
         ],
         "validation": {
-            "constraint_scores": {
-                "constraint_satisfaction": playlist.validation_result.constraint_scores.constraint_satisfaction,
-                "bpm_satisfaction": playlist.validation_result.constraint_scores.bpm_satisfaction,
-                "genre_satisfaction": playlist.validation_result.constraint_scores.genre_satisfaction,
-                "era_satisfaction": playlist.validation_result.constraint_scores.era_satisfaction,
-                "australian_content": playlist.validation_result.constraint_scores.australian_content,
-            },
-            "flow_metrics": {
-                "flow_quality_score": playlist.validation_result.flow_metrics.flow_quality_score,
-                "bpm_variance": playlist.validation_result.flow_metrics.bpm_variance,
-                "energy_progression": playlist.validation_result.flow_metrics.energy_progression,
-                "genre_diversity": playlist.validation_result.flow_metrics.genre_diversity,
+            "overall_status": playlist.validation_result.overall_status.value,
+            "compliance_percentage": float(playlist.validation_result.compliance_percentage),
+            "constraint_scores": constraint_scores_dict,
+            "flow_quality_metrics": {
+                "bpm_variance": float(playlist.validation_result.flow_quality_metrics.bpm_variance),
+                "bpm_progression_coherence": float(playlist.validation_result.flow_quality_metrics.bpm_progression_coherence),
+                "energy_consistency": float(playlist.validation_result.flow_quality_metrics.energy_consistency),
+                "genre_diversity_index": float(playlist.validation_result.flow_quality_metrics.genre_diversity_index),
             },
             "gap_analysis": playlist.validation_result.gap_analysis,
-            "passes_validation": playlist.validation_result.passes_validation,
+            "validated_at": playlist.validation_result.validated_at.isoformat(),
         },
     }
 
-    with open(output_file, "w", encoding="utf-8") as f:
+    with open(json_file, "w", encoding="utf-8") as f:
         json.dump(playlist_data, f, indent=2, ensure_ascii=False)
 
-    return output_file
+    return m3u_file
 
 
-async def sync_to_azuracast(playlists: List[Playlist]) -> Dict[Playlist, Optional[int]]:
+async def sync_to_azuracast(playlists: List[Playlist]) -> Dict[str, Optional[int]]:
     """
     Sync playlists to AzuraCast.
 
@@ -231,12 +250,12 @@ async def sync_to_azuracast(playlists: List[Playlist]) -> Dict[Playlist, Optiona
         playlists: List of validated playlists to sync
 
     Returns:
-        Dict mapping Playlist to AzuraCast playlist ID (or None if sync failed)
+        Dict mapping playlist name to AzuraCast playlist ID (or None if sync failed)
 
     Raises:
         AzuraCastPlaylistSyncError: If sync fails for any playlist
     """
-    sync_results: Dict[Playlist, Optional[int]] = {}
+    sync_results: Dict[str, Optional[int]] = {}
     failed_syncs = []
 
     for playlist in playlists:
@@ -244,8 +263,8 @@ async def sync_to_azuracast(playlists: List[Playlist]) -> Dict[Playlist, Optiona
             # Sync playlist to AzuraCast
             synced_playlist = await sync_playlist_to_azuracast(playlist)
 
-            # Record result
-            sync_results[playlist] = synced_playlist.azuracast_id
+            # Record result - use playlist name as key instead of object
+            sync_results[playlist.name] = synced_playlist.azuracast_id
             logger.info(f"✓ Synced {playlist.name} -> AzuraCast ID {synced_playlist.azuracast_id}")
 
         except AzuraCastPlaylistSyncError as e:
@@ -276,14 +295,36 @@ async def sync_to_azuracast(playlists: List[Playlist]) -> Dict[Playlist, Optiona
 def serialize_criteria(criteria: Any) -> Dict[str, Any]:
     """Serialize TrackSelectionCriteria to dict."""
     return {
-        "bpm_range": criteria.bpm_range,
-        "bpm_tolerance": criteria.bpm_tolerance,
-        "genre_mix": criteria.genre_mix,
-        "genre_tolerance": criteria.genre_tolerance,
-        "era_distribution": criteria.era_distribution,
-        "era_tolerance": criteria.era_tolerance,
-        "australian_min": criteria.australian_min,
-        "energy_flow": criteria.energy_flow,
+        "bpm_ranges": [
+            {
+                "time_start": str(r.time_start),
+                "time_end": str(r.time_end),
+                "bpm_min": r.bpm_min,
+                "bpm_max": r.bpm_max,
+            }
+            for r in criteria.bpm_ranges
+        ],
+        "genre_mix": {
+            genre: {
+                "target_percentage": gc.target_percentage,
+                "tolerance": gc.tolerance,
+            }
+            for genre, gc in criteria.genre_mix.items()
+        },
+        "era_distribution": {
+            era: {
+                "era_name": ec.era_name,
+                "min_year": ec.min_year,
+                "max_year": ec.max_year,
+                "target_percentage": ec.target_percentage,
+                "tolerance": ec.tolerance,
+            }
+            for era, ec in criteria.era_distribution.items()
+        },
+        "australian_content_min": criteria.australian_content_min,
+        "energy_flow_requirements": criteria.energy_flow_requirements,
+        "rotation_distribution": criteria.rotation_distribution,
+        "no_repeat_window_hours": criteria.no_repeat_window_hours,
     }
 
 
@@ -300,8 +341,8 @@ def serialize_tracks(tracks: Any) -> List[Dict[str, Any]]:
             "year": track.year,
             "country": track.country,
             "duration_seconds": track.duration_seconds,
-            "position": track.position,
-            "selection_reason": track.selection_reason,
+            "position_in_playlist": track.position_in_playlist,
+            "selection_reasoning": track.selection_reasoning,
         }
         for track in tracks
     ]
@@ -310,19 +351,24 @@ def serialize_tracks(tracks: Any) -> List[Dict[str, Any]]:
 def serialize_validation(validation: Any) -> Dict[str, Any]:
     """Serialize ValidationResult to dict."""
     return {
+        "overall_status": validation.overall_status.value,
         "constraint_scores": {
-            "constraint_satisfaction": validation.constraint_scores.constraint_satisfaction,
-            "bpm_satisfaction": validation.constraint_scores.bpm_satisfaction,
-            "genre_satisfaction": validation.constraint_scores.genre_satisfaction,
-            "era_satisfaction": validation.constraint_scores.era_satisfaction,
-            "australian_content": validation.constraint_scores.australian_content,
+            key: {
+                "constraint_name": score.constraint_name,
+                "target_value": float(score.target_value),
+                "actual_value": float(score.actual_value),
+                "is_compliant": score.is_compliant,
+                "deviation_percentage": float(score.deviation_percentage),
+            }
+            for key, score in validation.constraint_scores.items()
         },
-        "flow_metrics": {
-            "flow_quality_score": validation.flow_metrics.flow_quality_score,
-            "bpm_variance": validation.flow_metrics.bpm_variance,
-            "energy_progression": validation.flow_metrics.energy_progression,
-            "genre_diversity": validation.flow_metrics.genre_diversity,
+        "flow_quality_metrics": {
+            "bpm_variance": float(validation.flow_quality_metrics.bpm_variance),
+            "bpm_progression_coherence": float(validation.flow_quality_metrics.bpm_progression_coherence),
+            "energy_consistency": float(validation.flow_quality_metrics.energy_consistency),
+            "genre_diversity_index": float(validation.flow_quality_metrics.genre_diversity_index),
         },
+        "compliance_percentage": float(validation.compliance_percentage),
         "gap_analysis": validation.gap_analysis,
-        "passes_validation": validation.passes_validation,
+        "validated_at": validation.validated_at.isoformat(),
     }

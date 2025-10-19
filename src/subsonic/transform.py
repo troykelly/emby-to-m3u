@@ -126,9 +126,7 @@ def is_duplicate(track1: Dict, track2: Dict) -> bool:
     album2 = track2.get("Album", "").lower().strip()
 
     # Compare all three fields
-    return (title1 == title2 and
-            artist1 == artist2 and
-            album1 == album2)
+    return title1 == title2 and artist1 == artist2 and album1 == album2
 
 
 def detect_duplicates(tracks: List[Dict]) -> Set[str]:
@@ -223,16 +221,13 @@ def transform_subsonic_track(track: SubsonicTrack, playlist_manager) -> Dict:
         "Album": track.album,
         "RunTimeTicks": transform_duration(track.duration),
         "Path": track.path,
-
         # Optional metadata
         "Genres": transform_genre(track.genre),
         "IndexNumber": track.track,  # Track number
         "ParentIndexNumber": track.discNumber,  # Disc number
         "ProductionYear": track.year,
-
         # External provider IDs
         "ProviderIds": transform_musicbrainz_id(track.musicBrainzId),
-
         # Preserve original Subsonic metadata for reference
         "_subsonic_id": track.id,
         "_subsonic_suffix": track.suffix,

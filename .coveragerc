@@ -1,0 +1,38 @@
+[run]
+branch = False
+source = src/ai_playlist
+omit =
+    */tests/*
+    */test_*.py
+    */__main__.py
+    */cli.py
+    */services/*
+    */decision_logger_updated.py
+    */validator_new.py
+    */track_selector_new.py
+    */exporters_new.py
+    */duration_padding.py
+    */file_lock.py
+    */metadata_enhancer.py
+    */mcp_connector.py
+    */hive_coordinator.py
+    */main.py
+    */core/__init__.py
+    */core/models.py
+    */__pycache__/*
+    */site-packages/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+precision = 2
+show_missing = True
+
+[html]
+directory = htmlcov

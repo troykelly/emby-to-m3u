@@ -18,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def check_file_exists_by_musicbrainz(
-    known_tracks: List[Dict[str, Any]],
-    track: Dict[str, Any]
+    known_tracks: List[Dict[str, Any]], track: Dict[str, Any]
 ) -> Optional[str]:
     """Check for duplicate using MusicBrainz Track ID.
 
@@ -50,10 +49,7 @@ def check_file_exists_by_musicbrainz(
     mbid_index: Dict[str, List[str]] = {}
     for known_track in known_tracks:
         known_mbid = (
-            known_track.get("custom_fields", {})
-            .get("musicbrainz_trackid", "")
-            .strip()
-            .lower()
+            known_track.get("custom_fields", {}).get("musicbrainz_trackid", "").strip().lower()
         )
 
         if known_mbid:
@@ -78,9 +74,7 @@ def check_file_exists_by_musicbrainz(
 
 
 def check_file_exists_by_metadata(
-    known_tracks: List[Dict[str, Any]],
-    track: Dict[str, Any],
-    duration_tolerance_seconds: int = 5
+    known_tracks: List[Dict[str, Any]], track: Dict[str, Any], duration_tolerance_seconds: int = 5
 ) -> Optional[str]:
     """Check for duplicate using normalized metadata fingerprint.
 
@@ -120,11 +114,13 @@ def check_file_exists_by_metadata(
     fingerprint_index: Dict[str, List[Dict[str, Any]]] = {}
     for known_track in known_tracks:
         try:
-            known_fingerprint = build_track_fingerprint({
-                "AlbumArtist": known_track.get("artist", ""),
-                "Album": known_track.get("album", ""),
-                "Name": known_track.get("title", "")
-            })
+            known_fingerprint = build_track_fingerprint(
+                {
+                    "AlbumArtist": known_track.get("artist", ""),
+                    "Album": known_track.get("album", ""),
+                    "Name": known_track.get("title", ""),
+                }
+            )
             if known_fingerprint not in fingerprint_index:
                 fingerprint_index[known_fingerprint] = []
             fingerprint_index[known_fingerprint].append(known_track)
@@ -158,8 +154,7 @@ def check_file_exists_by_metadata(
 
 
 def should_skip_replaygain_conflict(
-    azuracast_track: Optional[Dict[str, Any]],
-    source_track: Dict[str, Any]
+    azuracast_track: Optional[Dict[str, Any]], source_track: Dict[str, Any]
 ) -> bool:
     """Check if upload should be skipped due to ReplayGain conflict.
 
@@ -182,16 +177,15 @@ def should_skip_replaygain_conflict(
 
     # Check if AzuraCast has ReplayGain
     azuracast_has_rg = (
-        "replaygain_track_gain" in azuracast_track or
-        "replaygain_album_gain" in azuracast_track
+        "replaygain_track_gain" in azuracast_track or "replaygain_album_gain" in azuracast_track
     )
 
     # Check if source has ReplayGain (supports multiple formats)
     source_has_rg = (
-        "ReplayGainTrackGain" in source_track or
-        "ReplayGainAlbumGain" in source_track or
-        "replaygain_track_gain" in source_track or
-        "replaygain_album_gain" in source_track
+        "ReplayGainTrackGain" in source_track
+        or "ReplayGainAlbumGain" in source_track
+        or "replaygain_track_gain" in source_track
+        or "replaygain_album_gain" in source_track
     )
 
     # Return True if AzuraCast has RG but source doesn't (preserve existing)
@@ -199,8 +193,7 @@ def should_skip_replaygain_conflict(
 
 
 def check_file_in_azuracast(
-    known_tracks: List[Dict[str, Any]],
-    track: Dict[str, Any]
+    known_tracks: List[Dict[str, Any]], track: Dict[str, Any]
 ) -> UploadDecision:
     """Multi-strategy duplicate detection with fallback logic.
 
@@ -236,7 +229,7 @@ def check_file_in_azuracast(
             should_upload=False,
             reason="Duplicate found by MusicBrainz ID match",
             strategy_used=DetectionStrategy.MUSICBRAINZ_ID,
-            azuracast_file_id=mbid_match
+            azuracast_file_id=mbid_match,
         )
 
     # Strategy 2: Normalized metadata match
@@ -244,10 +237,7 @@ def check_file_in_azuracast(
     if metadata_match:
         # Detect source duplicates (multiple source tracks → same AzuraCast track)
         # Find the AzuraCast track
-        azuracast_track = next(
-            (t for t in known_tracks if t["id"] == metadata_match),
-            None
-        )
+        azuracast_track = next((t for t in known_tracks if t["id"] == metadata_match), None)
 
         # Check ReplayGain conflict
         if should_skip_replaygain_conflict(azuracast_track, track):
@@ -258,7 +248,7 @@ def check_file_in_azuracast(
                     "source does not - preferring existing metadata"
                 ),
                 strategy_used=DetectionStrategy.NORMALIZED_METADATA,
-                azuracast_file_id=metadata_match
+                azuracast_file_id=metadata_match,
             )
 
         # No ReplayGain conflict, skip upload
@@ -272,7 +262,7 @@ def check_file_in_azuracast(
             should_upload=False,
             reason=reason,
             strategy_used=DetectionStrategy.NORMALIZED_METADATA,
-            azuracast_file_id=metadata_match
+            azuracast_file_id=metadata_match,
         )
 
     # Strategy 3: File path match (not yet implemented)
@@ -283,5 +273,5 @@ def check_file_in_azuracast(
         should_upload=True,
         reason="No duplicate found in AzuraCast library",
         strategy_used=DetectionStrategy.NONE,
-        azuracast_file_id=None
+        azuracast_file_id=None,
     )

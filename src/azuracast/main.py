@@ -28,7 +28,7 @@ MAX_BACKOFF = 64
 
 def generate_unique_suffix() -> str:
     """Generates a unique suffix to append to requests."""
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
 
 
 class AzuraCastSync:
@@ -42,9 +42,15 @@ class AzuraCastSync:
 
         # T031: Cache and detection configuration
         self._cache_ttl: int = int(os.getenv("AZURACAST_CACHE_TTL", "300"))
-        self._force_reupload: bool = os.getenv("AZURACAST_FORCE_REUPLOAD", "false").lower() == "true"
-        self._legacy_detection: bool = os.getenv("AZURACAST_LEGACY_DETECTION", "false").lower() == "true"
-        self._skip_replaygain_check: bool = os.getenv("AZURACAST_SKIP_REPLAYGAIN_CHECK", "false").lower() == "true"
+        self._force_reupload: bool = (
+            os.getenv("AZURACAST_FORCE_REUPLOAD", "false").lower() == "true"
+        )
+        self._legacy_detection: bool = (
+            os.getenv("AZURACAST_LEGACY_DETECTION", "false").lower() == "true"
+        )
+        self._skip_replaygain_check: bool = (
+            os.getenv("AZURACAST_SKIP_REPLAYGAIN_CHECK", "false").lower() == "true"
+        )
 
         # T036: Configuration validation
         if not self.host:
@@ -54,7 +60,9 @@ class AzuraCastSync:
         if not self.station_id:
             logger.warning("AZURACAST_STATIONID not set - API calls will fail")
 
-        logger.info(f"AzuraCast initialized: cache_ttl={self._cache_ttl}s, force_reupload={self._force_reupload}, legacy_detection={self._legacy_detection}")
+        logger.info(
+            f"AzuraCast initialized: cache_ttl={self._cache_ttl}s, force_reupload={self._force_reupload}, legacy_detection={self._legacy_detection}"
+        )
 
     def _get_session(self) -> requests.Session:
         """Creates a new session with retry strategy.
@@ -76,6 +84,7 @@ class AzuraCastSync:
         session.verify = False
         # Suppress warnings about unverified HTTPS requests
         import urllib3
+
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         return session
 
@@ -119,7 +128,9 @@ class AzuraCastSync:
                 if params is None:
                     params = {}
                 params["unique_suffix"] = unique_suffix
-                logger.debug("Attempt %d: Making request to %s with params %s", attempt, url, params)
+                logger.debug(
+                    "Attempt %d: Making request to %s with params %s", attempt, url, params
+                )
                 response = session.request(
                     method,
                     url,
@@ -130,7 +141,9 @@ class AzuraCastSync:
                     timeout=(10, 300),
                 )
                 if response.status_code == 404:
-                    logger.warning("Attempt %d: Request to %s resulted in 404 Not Found", attempt, url)
+                    logger.warning(
+                        "Attempt %d: Request to %s resulted in 404 Not Found", attempt, url
+                    )
                     return response  # Handle 404 gracefully by returning the response
 
                 # T033: Handle rate limiting (429 Too Many Requests)
@@ -140,9 +153,9 @@ class AzuraCastSync:
                         try:
                             wait_time = int(retry_after)
                         except ValueError:
-                            wait_time = min(BASE_BACKOFF * (2 ** attempt), MAX_BACKOFF)
+                            wait_time = min(BASE_BACKOFF * (2**attempt), MAX_BACKOFF)
                     else:
-                        wait_time = min(BASE_BACKOFF * (2 ** attempt), MAX_BACKOFF)
+                        wait_time = min(BASE_BACKOFF * (2**attempt), MAX_BACKOFF)
 
                     logger.warning(
                         "Attempt %d: Rate limited (429). Waiting %d seconds before retry...",
@@ -160,7 +173,7 @@ class AzuraCastSync:
                         attempt,
                         url,
                     )
-                    time.sleep(min(BASE_BACKOFF * (2 ** attempt), MAX_BACKOFF))
+                    time.sleep(min(BASE_BACKOFF * (2**attempt), MAX_BACKOFF))
                     continue  # Retry on 413 error
 
                 return response
@@ -176,7 +189,7 @@ class AzuraCastSync:
                     url,
                     e,
                 )
-                time.sleep(min(BASE_BACKOFF * (2 ** attempt), MAX_BACKOFF))
+                time.sleep(min(BASE_BACKOFF * (2**attempt), MAX_BACKOFF))
             except requests.exceptions.RequestException as e:
                 response_text: str = response.text if response else "No response"
                 logger.error(
@@ -204,7 +217,9 @@ class AzuraCastSync:
         response: requests.Response = self._perform_request("GET", endpoint)
         return response.json()  # Ensure the JSON content is returned
 
-    def check_file_in_azuracast(self, known_tracks: List[Dict[str, Any]], track: Dict[str, Any]) -> bool:
+    def check_file_in_azuracast(
+        self, known_tracks: List[Dict[str, Any]], track: Dict[str, Any]
+    ) -> bool:
         """Checks if a file with the same metadata exists in AzuraCast.
 
         Args:
@@ -269,7 +284,9 @@ class AzuraCastSync:
 
         # Check that the file is at least the minimum file size for a normal audio file - raise otherwise
         if file_size < 1000:
-            logger.error("File '%s' is too small to be a valid audio file with %d bytes", file_key, file_size)
+            logger.error(
+                "File '%s' is too small to be a valid audio file with %d bytes", file_key, file_size
+            )
             raise ValueError("File is too small to be a valid audio file")
 
         logger.debug("Uploading file '%s' with %d bytes", file_key, file_size)
@@ -284,19 +301,35 @@ class AzuraCastSync:
         return response.json()
 
     def get_playlist(self, playlist_name: str) -> Optional[Dict[str, Any]]:
-        """Retrieves a playlist by name from AzuraCast.
+        """Retrieves a playlist by name from AzuraCast with full details including schedule.
 
         Args:
             playlist_name: Name of the playlist.
 
         Returns:
-            Playlist information if found, None otherwise.
+            Playlist information if found (including schedule_items), None otherwise.
         """
         try:
+            # First get the list of playlists to find the ID
             endpoint: str = f"/station/{self.station_id}/playlists"
             response: requests.Response = self._perform_request("GET", endpoint)
             playlists: List[Any] = response.json()
-            return next((playlist for playlist in playlists if playlist["name"] == playlist_name), None)
+
+            # Find playlist by name
+            playlist_summary = next(
+                (playlist for playlist in playlists if playlist["name"] == playlist_name), None
+            )
+
+            if not playlist_summary:
+                return None
+
+            # Get full playlist details including schedule_items
+            playlist_id = playlist_summary["id"]
+            detail_endpoint = f"/station/{self.station_id}/playlist/{playlist_id}"
+            detail_response = self._perform_request("GET", detail_endpoint)
+
+            return detail_response.json()
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get playlist '{playlist_name}': {e}")
             return None
@@ -352,7 +385,9 @@ class AzuraCastSync:
             self._perform_request("PUT", endpoint, json=data)
             return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to add file with ID {file_id} to playlist with ID {playlist_id}: {e}")
+            logger.error(
+                f"Failed to add file with ID {file_id} to playlist with ID {playlist_id}: {e}"
+            )
             return False
 
     def clear_playlist_by_name(self, playlist_name: str) -> None:
@@ -368,7 +403,9 @@ class AzuraCastSync:
     def generate_file_path(self, track: Dict[str, Any]) -> str:
         """Generate file path used to store file in AzuraCast."""
         artist_name: str = track.get("AlbumArtist", "Unknown Artist")
-        album_name: str = f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+        album_name: str = (
+            f"{track.get('Album', 'Unknown Album')} ({track.get('ProductionYear', 'Unknown Year')})"
+        )
         disk_number: int = track.get("ParentIndexNumber", 1)
         track_number: int = track.get("IndexNumber", 1)
         title: str = track.get("Name", "Unknown Title")
@@ -390,13 +427,12 @@ class AzuraCastSync:
         title: str = track.get("Name", "Unknown Title")
 
         # Mark track as not uploaded by default
-        track._was_uploaded = False
+        track["_was_uploaded"] = False
 
         try:
             # Use cached known tracks with TTL management
             known_tracks: List[Dict[str, Any]] = get_cached_known_tracks(
-                fetch_fn=self.get_known_tracks,
-                force_refresh=self._force_reupload
+                fetch_fn=self.get_known_tracks, force_refresh=self._force_reupload
             )
 
             # Force reupload mode bypasses duplicate detection
@@ -404,10 +440,12 @@ class AzuraCastSync:
                 pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
                 # File does not exist, proceed with upload
                 file_content: bytes = track.download()
-                upload_response: Dict[str, Any] = self.upload_file_to_azuracast(file_content, self.generate_file_path(track))
+                upload_response: Dict[str, Any] = self.upload_file_to_azuracast(
+                    file_content, self.generate_file_path(track)
+                )
                 track["azuracast_file_id"] = upload_response.get("id")
                 if track["azuracast_file_id"]:
-                    track._was_uploaded = True
+                    track["_was_uploaded"] = True
                     logger.debug(
                         "Uploaded file '%s' to Azuracast with ID '%s'",
                         track["Name"],
@@ -444,14 +482,18 @@ class AzuraCastSync:
                         "File '%s' does not have ReplayGain metadata, deleting it from Azuracast.",
                         track["Name"],
                     )
-                    
+
                     pbar_upload_playlist.set_description(f"Deleting '{title}' by '{artist_name}'")
-                    
+
                     if self.delete_file_from_azuracast(track_id):
                         # Re-analyze and upload with ReplayGain metadata
                         new_file_content: bytes = track.download()
-                        pbar_upload_playlist.set_description(f"Uploading '{title}' by '{artist_name}'")
-                        upload_response = self.upload_file_to_azuracast(new_file_content, self.generate_file_path(track))
+                        pbar_upload_playlist.set_description(
+                            f"Uploading '{title}' by '{artist_name}'"
+                        )
+                        upload_response = self.upload_file_to_azuracast(
+                            new_file_content, self.generate_file_path(track)
+                        )
                         if upload_response and "id" in upload_response:
                             track["azuracast_file_id"] = upload_response["id"]
                             logger.debug(
@@ -468,7 +510,9 @@ class AzuraCastSync:
                             )
                             return False
                     else:
-                        pbar_upload_playlist.set_description(f"Delete failed '{title}' by '{artist_name}'")
+                        pbar_upload_playlist.set_description(
+                            f"Delete failed '{title}' by '{artist_name}'"
+                        )
                         logger.error(
                             "Failed to delete file '%s' from Azuracast, cannot re-upload",
                             track["Name"],
@@ -538,12 +582,12 @@ class AzuraCastSync:
     def upload_playlist(self, playlist: List[Dict[str, Any]]) -> bool:
         """Uploads tracks to AzuraCast and sets their azuracast_file_id without updating the playlist.
 
-            Args:
-                playlist: List of Track instances to upload.
+        Args:
+            playlist: List of Track instances to upload.
 
-            Returns:
-                True if the playlist upload was successful.
-            """
+        Returns:
+            True if the playlist upload was successful.
+        """
         # T034: Pre-count tracks that will need upload for progress reporting
         total_tracks = len(playlist)
         uploaded_count = 0
@@ -562,7 +606,7 @@ class AzuraCastSync:
                     if result:
                         if "azuracast_file_id" in track:
                             # Track was either uploaded or already existed
-                            if hasattr(track, '_was_uploaded') and track._was_uploaded:
+                            if track.get("_was_uploaded", False):
                                 uploaded_count += 1
                             else:
                                 skipped_count += 1
@@ -583,6 +627,111 @@ class AzuraCastSync:
 
         return True
 
+    def schedule_playlist(
+        self,
+        playlist_name: str,
+        start_time: str,
+        end_time: str,
+        days: Optional[List[int]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> bool:
+        """Schedule a playlist to play during specific time blocks.
+
+        IDEMPOTENT: If the playlist already has the same schedule, it won't create duplicates.
+
+        Args:
+            playlist_name: Name of the playlist to schedule.
+            start_time: Start time in HH:MM format (24-hour, e.g., "06:00").
+            end_time: End time in HH:MM format (24-hour, e.g., "10:00").
+            days: List of day numbers (0=Sunday, 1=Monday, ..., 6=Saturday).
+                  If None, defaults to all weekdays (1-5).
+            start_date: Start date in YYYY-MM-DD format (optional, for date-specific schedules).
+            end_date: End date in YYYY-MM-DD format (optional, for date-specific schedules).
+
+        Returns:
+            True if scheduling was successful, False otherwise.
+        """
+        try:
+            # Get playlist info
+            playlist_info = self.get_playlist(playlist_name)
+            if not playlist_info:
+                logger.error(f"Playlist '{playlist_name}' not found, cannot schedule")
+                return False
+
+            playlist_id = playlist_info["id"]
+
+            # Convert time string to HHMM integer format (e.g., "06:00" -> 600)
+            def time_to_hhmm(time_str: str) -> int:
+                hours, minutes = time_str.split(":")
+                return int(hours) * 100 + int(minutes)
+
+            start_hhmm = time_to_hhmm(start_time)
+            end_hhmm = time_to_hhmm(end_time)
+
+            # Default to weekdays if not specified
+            if days is None:
+                days = [1, 2, 3, 4, 5]  # Monday-Friday
+
+            # Check if schedule already exists with same configuration
+            existing_schedules = playlist_info.get("schedule_items", [])
+
+            # Check if we already have this exact schedule
+            schedule_exists = False
+            for schedule in existing_schedules:
+                if (schedule.get("start_time") == start_hhmm and
+                    schedule.get("end_time") == end_hhmm and
+                    sorted(schedule.get("days", [])) == sorted(days) and
+                    schedule.get("start_date") == start_date and
+                    schedule.get("end_date") == end_date):
+                    schedule_exists = True
+                    date_info = f" from {start_date} to {end_date}" if start_date else ""
+                    logger.info(
+                        f"✓ Schedule already exists for '{playlist_name}' "
+                        f"({start_time}-{end_time} on days {days}{date_info})"
+                    )
+                    break
+
+            if schedule_exists:
+                # Schedule already configured - skip update
+                return True
+
+            # Build schedule_items array - REPLACE all existing schedules with just this one
+            # This ensures idempotency - we don't accumulate duplicate schedules
+            schedule_item = {
+                "start_time": start_hhmm,
+                "end_time": end_hhmm,
+                "start_date": start_date,  # YYYY-MM-DD format or None for recurring
+                "end_date": end_date,      # YYYY-MM-DD format or None for recurring
+                "days": days,
+                "loop_once": False,
+            }
+
+            # Update playlist with schedule (replaces all existing schedule_items)
+            endpoint = f"/station/{self.station_id}/playlist/{playlist_id}"
+            data = {
+                "name": playlist_name,
+                "schedule_items": [schedule_item],  # Single schedule item replaces all
+            }
+
+            response = self._perform_request("PUT", endpoint, json=data)
+
+            if response.status_code == 200:
+                date_info = f" from {start_date} to {end_date}" if start_date else ""
+                logger.info(
+                    f"✓ Scheduled '{playlist_name}' for {start_time}-{end_time} on days {days}{date_info}"
+                )
+                return True
+            else:
+                logger.error(
+                    f"Failed to schedule '{playlist_name}': HTTP {response.status_code}"
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to schedule playlist '{playlist_name}': {e}")
+            return False
+
     def sync_playlist(self, playlist_name: str, playlist: List[Dict[str, Any]]) -> None:
         """Syncs the playlist to AzuraCast by clearing the playlist and adding tracks by their IDs.
 
@@ -592,13 +741,13 @@ class AzuraCastSync:
         """
         self.clear_playlist_by_name(playlist_name)
 
-        with tqdm(total=len(playlist), desc=f"Syncing playlist '{playlist_name}'", unit="track") as pbar:
+        with tqdm(
+            total=len(playlist), desc=f"Syncing playlist '{playlist_name}'", unit="track"
+        ) as pbar:
             for track in playlist:
                 try:
                     if "azuracast_file_id" in track:
-                        playlist_info: Optional[Dict[str, Any]] = self.get_playlist(
-                            playlist_name
-                        )
+                        playlist_info: Optional[Dict[str, Any]] = self.get_playlist(playlist_name)
                         if playlist_info:
                             self.add_to_playlist(track["azuracast_file_id"], playlist_info["id"])
                             logger.debug(
@@ -611,7 +760,9 @@ class AzuraCastSync:
                                 playlist_name
                             )
                             if created_playlist:
-                                self.add_to_playlist(track["azuracast_file_id"], created_playlist["id"])
+                                self.add_to_playlist(
+                                    track["azuracast_file_id"], created_playlist["id"]
+                                )
                                 logger.debug(
                                     "Created and added '%s' to new '%s' playlist in Azuracast.",
                                     track["Name"],
@@ -620,7 +771,9 @@ class AzuraCastSync:
                     else:
                         logger.warning(f"Skipping '{track['Name']}' as it has no AzuraCast ID.")
                 except Exception as e:
-                    logger.error(f"Failed to sync track '{track['Name']}' to playlist '{playlist_name}': {e}")
+                    logger.error(
+                        f"Failed to sync track '{track['Name']}' to playlist '{playlist_name}': {e}"
+                    )
                 finally:
                     pbar.update(1)
 

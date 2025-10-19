@@ -1,0 +1,431 @@
+openapi: 3.0.3
+info:
+  title: Track Metadata API
+  description: |
+    API for retrieving track metadata from Subsonic/Emby endpoints and
+    enhancing with Last.fm and aubio analysis (FR-029).
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+paths:
+  /tracks/search:
+    post:
+      summary: Search for tracks matching criteria
+      description: |
+        Query music library (Subsonic/Emby) for tracks matching selection criteria.
+        Returns tracks with available metadata (FR-010).
+      operationId: searchTracks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrackSearchRequest'
+      responses:
+        '200':
+          description: Matching tracks found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tracks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrackMetadata'
+                  total_count:
+                    type: integer
+                  search_time_ms:
+                    type: integer
+        '400':
+          description: Invalid search criteria
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Music library unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tracks/{track_id}/metadata:
+    get:
+      summary: Get complete metadata for track
+      description: |
+        Retrieve full metadata for specific track. If metadata is missing,
+        attempts to fetch from Last.fm API or analyze with aubio (FR-029).
+      operationId: getTrackMetadata
+      parameters:
+        - name: track_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Subsonic/Emby track identifier
+        - name: enhance
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Whether to enhance missing metadata from external sources
+      responses:
+        '200':
+          description: Track metadata retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackMetadata'
+        '404':
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tracks/{track_id}/enhance:
+    post:
+      summary: Enhance track metadata from external sources
+      description: |
+        Explicitly retrieve missing metadata (BPM, genre, etc.) from Last.fm API.
+        Falls back to aubio audio analysis if Last.fm unavailable. Results are
+        permanently cached (FR-029).
+      operationId: enhanceTrackMetadata
+      parameters:
+        - name: track_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force_aubio:
+                  type: boolean
+                  default: false
+                  description: Skip Last.fm and use aubio analysis directly
+      responses:
+        '200':
+          description: Metadata enhanced successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  track_id:
+                    type: string
+                  enhanced_fields:
+                    type: array
+                    items:
+                      type: string
+                    example: ["bpm", "genre"]
+                  metadata_source:
+                    type: string
+                    enum: [library, lastfm, aubio]
+                  metadata:
+                    $ref: '#/components/schemas/TrackMetadata'
+        '404':
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Enhancement failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tracks/validate:
+    post:
+      summary: Validate track against selection criteria
+      description: Validate track metadata against daypart selection criteria (FR-011)
+      operationId: validateTrack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                track_id:
+                  type: string
+                criteria:
+                  $ref: '#/components/schemas/TrackSelectionCriteria'
+                playlist_time:
+                  type: string
+                  format: time
+                  description: Position time in playlist for BPM range check
+              required:
+                - track_id
+                - criteria
+                - playlist_time
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  track_id:
+                    type: string
+                  validation_status:
+                    type: string
+                    enum: [pass, fail, warning]
+                  validation_notes:
+                    type: array
+                    items:
+                      type: string
+                  criteria_matched:
+                    type: array
+                    items:
+                      type: string
+
+components:
+  schemas:
+    TrackSearchRequest:
+      type: object
+      properties:
+        criteria:
+          $ref: '#/components/schemas/TrackSelectionCriteria'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+        exclude_track_ids:
+          type: array
+          items:
+            type: string
+          description: Track IDs to exclude (for no-repeat enforcement)
+      required:
+        - criteria
+
+    TrackSelectionCriteria:
+      type: object
+      properties:
+        bpm_ranges:
+          type: array
+          items:
+            $ref: '#/components/schemas/BPMRange'
+        genre_mix:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/GenreCriteria'
+        era_distribution:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/EraCriteria'
+        australian_content_min:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.30
+        energy_flow_requirements:
+          type: array
+          items:
+            type: string
+        mood_filters_include:
+          type: array
+          items:
+            type: string
+        mood_filters_exclude:
+          type: array
+          items:
+            type: string
+        rotation_distribution:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        no_repeat_window_hours:
+          type: number
+          format: float
+          minimum: 0.0
+        tolerance_bpm:
+          type: integer
+          default: 10
+        tolerance_genre_percent:
+          type: number
+          format: float
+          default: 0.10
+        tolerance_era_percent:
+          type: number
+          format: float
+          default: 0.10
+        specialty_constraints:
+          $ref: '#/components/schemas/SpecialtyConstraint'
+      required:
+        - bpm_ranges
+        - genre_mix
+        - era_distribution
+        - australian_content_min
+        - energy_flow_requirements
+        - rotation_distribution
+        - no_repeat_window_hours
+
+    BPMRange:
+      type: object
+      properties:
+        time_start:
+          type: string
+          format: time
+        time_end:
+          type: string
+          format: time
+        bpm_min:
+          type: integer
+        bpm_max:
+          type: integer
+      required:
+        - time_start
+        - time_end
+        - bpm_min
+        - bpm_max
+
+    GenreCriteria:
+      type: object
+      properties:
+        target_percentage:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        tolerance:
+          type: number
+          format: float
+          default: 0.10
+      required:
+        - target_percentage
+
+    EraCriteria:
+      type: object
+      properties:
+        era_name:
+          type: string
+          example: "Current"
+        min_year:
+          type: integer
+          example: 2023
+        max_year:
+          type: integer
+          example: 2025
+        target_percentage:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        tolerance:
+          type: number
+          format: float
+          default: 0.10
+      required:
+        - era_name
+        - min_year
+        - max_year
+        - target_percentage
+
+    SpecialtyConstraint:
+      type: object
+      properties:
+        constraint_type:
+          type: string
+          enum: [australian_only, genre_only, theme_based]
+        description:
+          type: string
+        parameters:
+          type: object
+      required:
+        - constraint_type
+        - description
+        - parameters
+
+    TrackMetadata:
+      type: object
+      properties:
+        track_id:
+          type: string
+          description: Subsonic/Emby identifier
+        title:
+          type: string
+        artist:
+          type: string
+        album:
+          type: string
+        bpm:
+          type: integer
+          nullable: true
+          minimum: 60
+          maximum: 200
+        genre:
+          type: string
+          nullable: true
+        year:
+          type: integer
+          nullable: true
+          minimum: 1900
+        country:
+          type: string
+          nullable: true
+          description: ISO 3166-1 country code
+        duration_seconds:
+          type: integer
+          minimum: 1
+        is_australian:
+          type: boolean
+        rotation_category:
+          type: string
+          enum: [Power, Medium, Light, Recurrent, Library]
+        metadata_source:
+          type: string
+          enum: [library, lastfm, aubio, mixed]
+          description: Where metadata originated
+        metadata_completeness:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Percentage of fields populated
+        file_path:
+          type: string
+          description: Path to audio file (for aubio analysis)
+      required:
+        - track_id
+        - title
+        - artist
+        - album
+        - duration_seconds
+        - is_australian
+        - rotation_category
+        - metadata_source
+        - metadata_completeness
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required:
+        - error
+        - message

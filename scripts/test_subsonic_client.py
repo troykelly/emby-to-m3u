@@ -2,11 +2,11 @@
 """Manual test script for SubsonicClient.
 
 This script tests the SubsonicClient implementation against a real Subsonic server.
-Set SUBSONIC_USERNAME and SUBSONIC_PASSWORD environment variables before running.
+Set SUBSONIC_USER and SUBSONIC_PASSWORD environment variables before running.
 
 Usage:
     export SUBSONIC_URL="https://music.mctk.co"
-    export SUBSONIC_USERNAME="your_username"
+    export SUBSONIC_USER="your_username"
     export SUBSONIC_PASSWORD="your_password"
     python scripts/test_subsonic_client.py
 """
@@ -26,12 +26,12 @@ def main():
     """Run manual tests against Subsonic server."""
     # Check for environment variables
     url = os.getenv("SUBSONIC_URL", "https://music.mctk.co")
-    username = os.getenv("SUBSONIC_USERNAME")
+    username = os.getenv("SUBSONIC_USER")
     password = os.getenv("SUBSONIC_PASSWORD")
 
     if not username or not password:
-        print("ERROR: SUBSONIC_USERNAME and SUBSONIC_PASSWORD must be set")
-        print("Usage: SUBSONIC_USERNAME=user SUBSONIC_PASSWORD=pass python scripts/test_subsonic_client.py")
+        print("ERROR: SUBSONIC_USER and SUBSONIC_PASSWORD must be set")
+        print("Usage: SUBSONIC_USER=user SUBSONIC_PASSWORD=pass python scripts/test_subsonic_client.py")
         return 1
 
     # Create configuration

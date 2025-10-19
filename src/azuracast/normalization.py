@@ -46,20 +46,21 @@ def normalize_string(text: str) -> str:
     normalized = text.strip().lower()
 
     # Step 2: Unicode normalization (NFKD decomposition)
-    normalized = unicodedata.normalize('NFKD', normalized)
+    normalized = unicodedata.normalize("NFKD", normalized)
 
     # Step 3: Remove diacritics (keep only ASCII, excluding nonspacing marks)
-    normalized = ''.join(
-        char for char in normalized
-        if unicodedata.category(char) != 'Mn'  # Mn = Nonspacing_Mark (diacritics)
+    normalized = "".join(
+        char
+        for char in normalized
+        if unicodedata.category(char) != "Mn"  # Mn = Nonspacing_Mark (diacritics)
     )
 
     # Step 4: Remove special characters (keep alphanumeric + space)
     # This also handles emoji and other non-alphanumeric characters
-    normalized = re.sub(r'[^a-z0-9\s]', ' ', normalized)
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
 
     # Step 5: Collapse multiple spaces to single space
-    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
 
     return normalized
 
@@ -141,27 +142,13 @@ def build_track_fingerprint(track: Dict[str, Any]) -> str:
         'pink floyd|dark side of the moon the|time'
     """
     # Field priority for artist (AlbumArtist preferred, fallback to artist/Artist)
-    artist_raw = (
-        track.get("AlbumArtist") or
-        track.get("artist") or
-        track.get("Artist") or
-        ""
-    )
+    artist_raw = track.get("AlbumArtist") or track.get("artist") or track.get("Artist") or ""
 
     # Field priority for album
-    album_raw = (
-        track.get("Album") or
-        track.get("album") or
-        ""
-    )
+    album_raw = track.get("Album") or track.get("album") or ""
 
     # Field priority for title/name
-    title_raw = (
-        track.get("Name") or
-        track.get("title") or
-        track.get("Title") or
-        ""
-    )
+    title_raw = track.get("Name") or track.get("title") or track.get("Title") or ""
 
     # Check for missing fields BEFORE normalization
     missing = []

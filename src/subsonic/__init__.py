@@ -24,6 +24,9 @@ from .models import (
     SubsonicTrack,
 )
 
+# Backward compatibility alias
+Track = SubsonicTrack
+
 __all__ = [
     # Client
     "SubsonicClient",
@@ -48,4 +51,6 @@ __all__ = [
     "SubsonicParameterError",
     "SubsonicTrialError",
     "SubsonicVersionError",
+    # Legacy aliases
+    "Track",
 ]
