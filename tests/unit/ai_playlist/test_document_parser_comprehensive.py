@@ -628,3 +628,80 @@ Test Radio - Electronic Music Station
         # Sunday structure may or may not be parsed successfully
         if len(sunday) > 0:
             assert sunday[0].schedule_type == ScheduleType.SUNDAY
+
+class TestEdgeCaseCoverage:
+    """Tests for edge cases to achieve higher coverage."""
+
+    def test_parse_genre_mix_with_section_break_hash(self):
+        """Test genre parsing stops at ### section header (line 351)."""
+        content = """
+*Genre Mix:*
+- Contemporary Alternative: 25%
+- Electronic/Downtempo: 20%
+### New Section
+- Should Not Parse: 50%
+"""
+        parser = DocumentParser()
+        result = parser._parse_genre_mix(content)
+        
+        # Should only parse genres before ### header
+        assert "Contemporary Alternative" in result
+        assert "Electronic/Downtempo" in result
+        assert "Should Not Parse" not in result
+
+    def test_parse_genre_mix_with_minimum_keyword_skip(self):
+        """Test genre parsing skips lines with 'minimum' keyword (line 365)."""
+        content = """
+*Genre Mix:*
+- Contemporary Alternative: 25%
+- Australian Artists: 30% minimum (special requirement)
+- Electronic/Downtempo: 20%
+"""
+        parser = DocumentParser()
+        result = parser._parse_genre_mix(content)
+        
+        # Should skip the 'minimum' line
+        assert "Contemporary Alternative" in result
+        assert "Electronic/Downtempo" in result
+        # 'minimum' line should be skipped
+        assert len(result) == 2
+
+    def test_parse_era_distribution_with_section_break(self):
+        """Test era parsing stops at section header (line 402)."""
+        content = """
+*Era Mix:*
+- Current (last 2 years): 40%
+- Recent (2-5 years): 35%
+### Another Section
+- Should Not Parse: 25%
+"""
+        parser = DocumentParser()
+        result = parser._parse_era_distribution(content)
+        
+        # Should only parse eras before section break
+        assert "Current" in result
+        assert "Recent" in result
+
+    def test_parse_australian_content_with_target_range(self):
+        """Test Australian content with min-max range (lines 603-607)."""
+        content = """
+Australian Content: 30-40%
+"""
+        parser = DocumentParser()
+        result = parser._parse_content_requirements(content)
+        
+        # Should parse min and target
+        assert result.australian_content_min == 0.30
+        assert result.australian_content_target == 0.40
+
+    def test_parse_australian_content_single_value(self):
+        """Test Australian content with single value (line 607)."""
+        content = """
+Australian Content: 35%
+"""
+        parser = DocumentParser()
+        result = parser._parse_content_requirements(content)
+        
+        # Target should equal min when not specified (else clause on line 606-607)
+        assert result.australian_content_min == 0.35
+        assert result.australian_content_target == 0.35

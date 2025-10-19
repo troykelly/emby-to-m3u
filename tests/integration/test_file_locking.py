@@ -50,8 +50,13 @@ class TestFileLocking:
 
     @pytest.fixture
     def station_identity_path(self) -> Path:
-        """Get path to station identity example file."""
-        return Path("/workspaces/emby-to-m3u/station-identity.example.md")
+        """Get path to test fixture station identity file."""
+        # Use the existing test fixture which is always available
+        fixture_path = Path(__file__).parent.parent / "fixtures" / "sample_station_identity.md"
+        if not fixture_path.exists():
+            # Fallback to project root if fixture not found
+            fixture_path = Path("/workspaces/emby-to-m3u/tests/fixtures/sample_station_identity.md")
+        return fixture_path
 
     @pytest.fixture
     def test_lock_file(self, tmp_path: Path) -> Path:

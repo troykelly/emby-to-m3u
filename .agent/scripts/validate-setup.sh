@@ -94,6 +94,7 @@ check_directory "$PROJECT_ROOT/.devcontainer" ".devcontainer directory"
 check_file "$PROJECT_ROOT/.gitignore" ".gitignore file"
 check_file "$PROJECT_ROOT/.gitattributes" ".gitattributes file"
 check_file "$PROJECT_ROOT/.env.example" ".env.example file"
+check_file "$PROJECT_ROOT/TEMPLATE_README.md" "TEMPLATE_README.md file"
 
 echo ""
 echo -e "${YELLOW}=== Devcontainer Configuration ===${NC}"
@@ -164,8 +165,16 @@ fi
 echo ""
 echo -e "${YELLOW}=== Claude-Flow Installation ===${NC}"
 
-# Check Claude-Flow npx cache availability
-run_test "Claude-Flow availability" "npx --yes claude-flow@alpha --version"
+# Check for global installation first, then fall back to npx
+if command -v claude-flow &> /dev/null; then
+    run_test "Claude-Flow (global)" "claude-flow --version"
+elif [ -n "${PNPM_HOME:-}" ] && [ -x "$PNPM_HOME/bin/claude-flow" ]; then
+    export PATH="$PNPM_HOME/bin:$PATH"
+    run_test "Claude-Flow (pnpm global)" "claude-flow --version"
+else
+    # Fall back to npx (may have ARM64 SQLite issues)
+    run_test "Claude-Flow (npx fallback)" "npx --yes claude-flow@alpha --version"
+fi
 
 # Check if repository is initialized
 if [ -f "$PROJECT_ROOT/.claude-flow.json" ]; then

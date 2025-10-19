@@ -3,7 +3,9 @@
 # Aperim Template - Repository Initialisation Script
 # Runs all configuration scripts in proper order
 
-set -euo pipefail
+set -uo pipefail
+# Don't use -e (exit on error) since some sub-scripts may have non-critical failures
+# We want to continue and report all issues, not fail on first error
 
 # Colours for output (Australian spelling)
 RED='\033[0;31m'
@@ -69,6 +71,22 @@ else
     echo -e "${YELLOW}⚠️  install-agent-tools.sh not found or not executable${NC}"
 fi
 
+# Install MCP Servers
+echo -e "${BLUE}🔌 Installing MCP Servers...${NC}"
+if [ -x "$SCRIPT_DIR/install-mcp-servers.sh" ]; then
+    "$SCRIPT_DIR/install-mcp-servers.sh"
+else
+    echo -e "${YELLOW}⚠️  install-mcp-servers.sh not found or not executable${NC}"
+fi
+
+# Install Claude Skills and Marketplaces
+echo -e "${BLUE}🎓 Installing Claude Skills and Marketplaces...${NC}"
+if [ -x "$SCRIPT_DIR/install-claude-skills.sh" ]; then
+    "$SCRIPT_DIR/install-claude-skills.sh" || echo -e "${YELLOW}⚠️  Skills installation had some issues (non-critical)${NC}"
+else
+    echo -e "${YELLOW}⚠️  install-claude-skills.sh not found or not executable${NC}"
+fi
+
 # Source agent tools environment
 echo -e "${BLUE}🔧 Setting up tool environment...${NC}"
 if [ -f ".agent/configs/agent-tools-env.sh" ]; then
@@ -81,7 +99,8 @@ fi
 # Run validation
 echo -e "${BLUE}✅ Running validation...${NC}"
 if [ -x "$SCRIPT_DIR/validate-setup.sh" ]; then
-    "$SCRIPT_DIR/validate-setup.sh"
+    # Don't fail if validation finds issues, just report them
+    "$SCRIPT_DIR/validate-setup.sh" || echo -e "${YELLOW}⚠️  Some validation checks failed (non-critical, review output above)${NC}"
 else
     echo -e "${YELLOW}⚠️  validate-setup.sh not found, skipping validation${NC}"
 fi

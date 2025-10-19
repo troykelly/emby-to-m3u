@@ -583,3 +583,20 @@ class TestLLMTrackSelectionResponse:
                 execution_time_seconds=10.5,
                 created_at=future_time,
             )
+
+
+
+def test_validate_playlist_name_invalid_format():
+    """Test that invalid playlist name raises ValueError (covers _validation_helpers.py:24)."""
+    from src.ai_playlist.models._validation_helpers import validate_playlist_name
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Name must match schema"):
+        validate_playlist_name("InvalidName")  # Missing required format
+
+def test_validate_playlist_name_valid_format():
+    """Test that valid playlist name does not raise error."""
+    from src.ai_playlist.models._validation_helpers import validate_playlist_name
+
+    # Act - should not raise
+    validate_playlist_name("Monday_MorningShow_0600_0900")

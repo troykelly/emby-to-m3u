@@ -10,7 +10,8 @@ export PATH="$APERIM_TOOLS_DIR:$PATH"
 alias claude='/home/vscode/.local/bin/claude'
 alias codex='/home/vscode/.local/bin/codex'
 alias opencode='/home/vscode/.local/bin/opencode'
+alias specify='/home/vscode/.local/bin/specify'
 
 echo "🤖 Aperim agent tools loaded"
-echo "Available tools: claude, codex, opencode"
+echo "Available tools: claude, codex, opencode, specify"
 echo "Tools directory: $APERIM_TOOLS_DIR"

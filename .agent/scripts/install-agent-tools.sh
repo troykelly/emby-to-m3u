@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Aperim Template - Install Agent Tools Script
-# Installs claude-code, codex, and opencode CLI binaries
+# Installs claude-code, codex, opencode, and spec-kit CLI tools
 
 set -euo pipefail
 
@@ -153,92 +153,123 @@ if [ -z "$CODEX_TAG" ]; then
 else
     echo -e "${BLUE}Latest Codex release: $CODEX_TAG${NC}"
     
-    # Construct download URL based on platform (using actual asset naming from GitHub)
+    # Determine which binary variants to try based on platform
+    # For Linux, we'll try both gnu (preferred for performance) and musl (better compatibility)
+    # For macOS, only darwin binaries are available
+    CODEX_BINARY_VARIANTS=()
+
     if [ "$OS_NAME" = "linux" ]; then
-        # Detect libc type - Alpine and similar use musl, most others use glibc
-        if [ -f /etc/alpine-release ] || ldd --version 2>&1 | grep -q musl; then
-            # Alpine Linux or musl-based system
-            if [ "$ARCH_NAME" = "arm64" ]; then
-                CODEX_BINARY_NAME="codex-aarch64-unknown-linux-musl"
-            else
-                CODEX_BINARY_NAME="codex-x86_64-unknown-linux-musl"
-            fi
+        # For Linux, set up both gnu and musl variants to try
+        if [ "$ARCH_NAME" = "arm64" ]; then
+            CODEX_BINARY_VARIANTS=("codex-aarch64-unknown-linux-gnu" "codex-aarch64-unknown-linux-musl")
         else
-            # Standard glibc-based system (Debian, Ubuntu, RHEL, etc.)
-            if [ "$ARCH_NAME" = "arm64" ]; then
-                CODEX_BINARY_NAME="codex-aarch64-unknown-linux-gnu"
-            else
-                CODEX_BINARY_NAME="codex-x86_64-unknown-linux-gnu"
-            fi
+            CODEX_BINARY_VARIANTS=("codex-x86_64-unknown-linux-gnu" "codex-x86_64-unknown-linux-musl")
         fi
     elif [ "$OS_NAME" = "macos" ]; then
+        # For macOS, only darwin binaries available
         if [ "$ARCH_NAME" = "arm64" ]; then
-            CODEX_BINARY_NAME="codex-aarch64-apple-darwin"
+            CODEX_BINARY_VARIANTS=("codex-aarch64-apple-darwin")
         else
-            CODEX_BINARY_NAME="codex-x86_64-apple-darwin"
+            CODEX_BINARY_VARIANTS=("codex-x86_64-apple-darwin")
         fi
     else
         echo -e "${RED}❌ Unsupported platform for Codex: $OS_NAME-$ARCH_NAME${NC}"
         continue
     fi
-    
-    CODEX_URL="https://github.com/openai/codex/releases/download/$CODEX_TAG/$CODEX_BINARY_NAME.tar.gz"
-    
-    echo -e "${BLUE}Downloading: $CODEX_URL${NC}"
-    
-    # Download and install
-    TEMP_DIR="/tmp/codex-install"
-    mkdir -p "$TEMP_DIR"
-    
-    if curl -fsSL -o "$TEMP_DIR/codex.tar.gz" "$CODEX_URL"; then
-        # Check if we actually downloaded a valid file using portable wc command
-        if [ -f "$TEMP_DIR/codex.tar.gz" ]; then
-            FILE_SIZE=$(wc -c < "$TEMP_DIR/codex.tar.gz" | tr -d ' ')
-            if [ "$FILE_SIZE" -lt 1000 ]; then
-                echo -e "${RED}❌ Downloaded file too small ($FILE_SIZE bytes), likely a redirect error${NC}"
-                rm -rf "$TEMP_DIR"
-            else
-                cd "$TEMP_DIR"
-                # Extract and show any errors for debugging
+
+    # Try each variant until one works
+    CODEX_INSTALLED=false
+    for CODEX_BINARY_BASE in "${CODEX_BINARY_VARIANTS[@]}"; do
+        # Skip if already installed from a previous variant
+        if [ "$CODEX_INSTALLED" = true ]; then
+            break
+        fi
+
+        CODEX_URL="https://github.com/openai/codex/releases/download/$CODEX_TAG/${CODEX_BINARY_BASE}.tar.gz"
+        echo -e "${BLUE}Trying: $CODEX_BINARY_BASE${NC}"
+        echo -e "${BLUE}Downloading: $CODEX_URL${NC}"
+
+        # Download and install
+        TEMP_DIR="/tmp/codex-install-$$"
+        mkdir -p "$TEMP_DIR"
+
+        if curl -fsSL -o "$TEMP_DIR/codex.tar.gz" "$CODEX_URL"; then
+            # Check if we actually downloaded a valid file using portable wc command
+            if [ -f "$TEMP_DIR/codex.tar.gz" ]; then
+                FILE_SIZE=$(wc -c < "$TEMP_DIR/codex.tar.gz" | tr -d ' ')
+                if [ "$FILE_SIZE" -lt 1000 ]; then
+                    echo -e "${YELLOW}⚠️  Downloaded file too small ($FILE_SIZE bytes), trying next variant...${NC}"
+                    rm -rf "$TEMP_DIR"
+                    continue
+                fi
+
+                # Extract in temp dir (use subshell to preserve working directory)
                 echo -e "${BLUE}Extracting Codex archive...${NC}"
-                if tar -xzf codex.tar.gz; then
-                    # List extracted files for debugging
-                    echo -e "${BLUE}Extracted files:${NC}"
-                    ls -la
-                    
-                    # Find the extracted binary - exclude tar/zip files and look for executable
-                    EXTRACTED_BINARY=$(find . -name "codex*" -type f ! -name "*.tar.gz" ! -name "*.zip" 2>/dev/null | head -1)
-                    
-                    if [ -n "$EXTRACTED_BINARY" ]; then
-                        echo -e "${BLUE}Found binary: $EXTRACTED_BINARY${NC}"
-                        # Move to tools directory and rename to codex
-                        mv "$EXTRACTED_BINARY" "$TOOLS_DIR/codex"
-                        chmod +x "$TOOLS_DIR/codex"
-                        echo -e "${GREEN}✅ Codex CLI installed successfully${NC}"
-                        
-                        # Verify installation
-                        if "$TOOLS_DIR/codex" --version >/dev/null 2>&1; then
-                            VERSION=$("$TOOLS_DIR/codex" --version 2>/dev/null || echo "unknown")
-                            echo -e "${BLUE}Codex version: $VERSION${NC}"
+                (cd "$TEMP_DIR" && tar -xzf codex.tar.gz) 2>/dev/null
+
+                if [ $? -eq 0 ]; then
+                    # The archive contains a binary with the platform-specific name
+                    EXTRACTED_BINARY="$TEMP_DIR/$CODEX_BINARY_BASE"
+
+                    # Check if the expected binary exists
+                    if [ -f "$EXTRACTED_BINARY" ]; then
+                        echo -e "${BLUE}Found binary: $CODEX_BINARY_BASE${NC}"
+
+                        # Verify it's actually a binary (not a text file/redirect error)
+                        if file "$EXTRACTED_BINARY" | grep -qi "executable\|binary"; then
+                            # Test if the binary can run (check for GLIBC compatibility)
+                            if "$EXTRACTED_BINARY" --help >/dev/null 2>&1; then
+                                # Binary works! Install it
+                                mv "$EXTRACTED_BINARY" "$TOOLS_DIR/codex"
+                                chmod +x "$TOOLS_DIR/codex"
+                                echo -e "${GREEN}✅ Codex CLI installed successfully (variant: ${CODEX_BINARY_BASE})${NC}"
+
+                                # Verify installation
+                                if "$TOOLS_DIR/codex" --version >/dev/null 2>&1; then
+                                    VERSION=$("$TOOLS_DIR/codex" --version 2>/dev/null || echo "unknown")
+                                    echo -e "${BLUE}Codex version: $VERSION${NC}"
+                                fi
+
+                                CODEX_INSTALLED=true
+                                rm -rf "$TEMP_DIR"
+                                break
+                            else
+                                # Binary doesn't work (likely GLIBC incompatibility), try next variant
+                                echo -e "${YELLOW}⚠️  Binary incompatible with system (likely GLIBC version), trying next variant...${NC}"
+                                rm -rf "$TEMP_DIR"
+                                continue
+                            fi
+                        else
+                            echo -e "${YELLOW}⚠️  Extracted file is not a valid binary, trying next variant...${NC}"
+                            rm -rf "$TEMP_DIR"
+                            continue
                         fi
                     else
-                        echo -e "${RED}❌ Could not find Codex binary in archive${NC}"
+                        echo -e "${YELLOW}⚠️  Could not find expected binary, trying next variant...${NC}"
+                        rm -rf "$TEMP_DIR"
+                        continue
                     fi
                 else
-                    echo -e "${RED}❌ Failed to extract Codex archive${NC}"
-                    echo -e "${YELLOW}Tar error output above may help diagnose the issue${NC}"
+                    echo -e "${YELLOW}⚠️  Failed to extract archive, trying next variant...${NC}"
+                    rm -rf "$TEMP_DIR"
+                    continue
                 fi
-                
-                # Cleanup
+            else
+                echo -e "${YELLOW}⚠️  Download failed, trying next variant...${NC}"
                 rm -rf "$TEMP_DIR"
+                continue
             fi
         else
-            echo -e "${RED}❌ Download failed - file not created${NC}"
+            echo -e "${YELLOW}⚠️  Failed to download, trying next variant...${NC}"
             rm -rf "$TEMP_DIR"
+            continue
         fi
-    else
-        echo -e "${RED}❌ Failed to download Codex CLI${NC}"
-        rm -rf "$TEMP_DIR"
+    done
+
+    # Check if installation succeeded
+    if [ "$CODEX_INSTALLED" != true ]; then
+        echo -e "${RED}❌ Failed to install Codex CLI - tried all available variants${NC}"
+        echo -e "${YELLOW}Variants tried: ${CODEX_BINARY_VARIANTS[*]}${NC}"
     fi
 fi
 
@@ -255,7 +286,13 @@ cd "$OPENCODE_TEMP"
 
 # Try the official installer with explicit temp directory - disable error exit for this section
 set +e
+# Export PATH additions before running installer
+export PATH="$HOME/.local/bin:$PATH"
 if TMPDIR="$OPENCODE_TEMP" curl -fsSL https://opencode.ai/install | bash; then
+    # Refresh PATH from installer updates
+    export PATH="$HOME/.local/bin:$PATH"
+    # Give installer time to complete file operations
+    sleep 2
     echo -e "${GREEN}✅ OpenCode installed successfully${NC}"
     
     # Try to find OpenCode in the PATH that was just updated
@@ -325,6 +362,127 @@ rm -rf "$OPENCODE_TEMP"
 # Return to project root
 cd "$PROJECT_ROOT"
 
+# Install spec-kit CLI
+echo -e "${BLUE}=== Installing spec-kit CLI ===${NC}"
+
+# spec-kit can be installed via multiple methods:
+# 1. npm (preferred for Node.js environments)
+# 2. uvx (Python tool installer)
+# 3. bun (if available)
+# We'll try methods in order of preference
+
+SPECKIT_INSTALLED=false
+
+# Method 1: Try npm installation (most reliable when it works)
+# Note: @spec-kit/cli may have workspace dependency issues
+if command -v npm &> /dev/null; then
+    echo -e "${BLUE}Trying npm installation...${NC}"
+    # Capture stderr to check for workspace errors (with timeout to avoid hangs)
+    NPM_ERROR=$(timeout 30 npm install -g @spec-kit/cli 2>&1 >/dev/null || true)
+    NPM_EXIT_CODE=$?
+    if [ $NPM_EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}✅ spec-kit installed successfully via npm${NC}"
+
+        # Verify installation (spec-kit doesn't support --version, use --help)
+        if command -v specify &> /dev/null; then
+            if specify --help >/dev/null 2>&1; then
+                echo -e "${BLUE}spec-kit CLI ready${NC}"
+
+                # Create symlink in tools directory if not already there
+                SPECIFY_PATH=$(which specify)
+                if [ -n "$SPECIFY_PATH" ] && [ "$SPECIFY_PATH" != "$TOOLS_DIR/specify" ]; then
+                    ln -sf "$SPECIFY_PATH" "$TOOLS_DIR/specify" 2>/dev/null || true
+                fi
+                SPECKIT_INSTALLED=true
+            fi
+        else
+            echo -e "${YELLOW}⚠️  spec-kit installed but not found in PATH${NC}"
+            # Check common npm global bin locations
+            for path in "$HOME/.npm-global/bin/specify" "$(npm root -g)/../bin/specify" "/usr/local/bin/specify"; do
+                if [ -f "$path" ] && [ -x "$path" ]; then
+                    echo -e "${BLUE}Found spec-kit at: $path${NC}"
+                    ln -sf "$path" "$TOOLS_DIR/specify"
+                    echo -e "${GREEN}✅ Created symlink to tools directory${NC}"
+                    SPECKIT_INSTALLED=true
+                    break
+                fi
+            done
+        fi
+    elif [ $NPM_EXIT_CODE -eq 124 ]; then
+        echo -e "${YELLOW}⚠️  npm installation timed out, trying alternative methods...${NC}"
+    else
+        # Check if it's a workspace dependency issue
+        if echo "$NPM_ERROR" | grep -q "EUNSUPPORTEDPROTOCOL\|workspace:"; then
+            echo -e "${YELLOW}⚠️  npm package has workspace dependencies, trying alternative methods...${NC}"
+        else
+            echo -e "${YELLOW}⚠️  npm installation failed, trying alternative methods...${NC}"
+        fi
+    fi
+fi
+
+# Method 2: Try uvx installation (recommended for spec-kit)
+if [ "$SPECKIT_INSTALLED" != true ] && command -v uvx &> /dev/null; then
+    echo -e "${BLUE}Installing spec-kit via uvx (recommended method)...${NC}"
+
+    # uvx can install from git repository - test with --help since --version isn't supported
+    if uvx --from git+https://github.com/github/spec-kit.git specify --help >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ spec-kit available via uvx${NC}"
+
+        # Create wrapper script since uvx runs commands differently
+        cat > "$TOOLS_DIR/specify" << 'EOF'
+#!/bin/bash
+# spec-kit wrapper for uvx installation
+exec uvx --from git+https://github.com/github/spec-kit.git specify "$@"
+EOF
+        chmod +x "$TOOLS_DIR/specify"
+
+        # Test the wrapper
+        if "$TOOLS_DIR/specify" --help >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ spec-kit wrapper created successfully${NC}"
+            echo -e "${BLUE}spec-kit CLI ready (GitHub Spec Kit)${NC}"
+            SPECKIT_INSTALLED=true
+        else
+            echo -e "${RED}❌ Failed to create spec-kit wrapper${NC}"
+            rm -f "$TOOLS_DIR/specify"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  uvx installation failed, trying alternative methods...${NC}"
+    fi
+fi
+
+# Method 3: Try bun installation (if available)
+if [ "$SPECKIT_INSTALLED" != true ] && command -v bun &> /dev/null; then
+    echo -e "${BLUE}Installing spec-kit via bun...${NC}"
+    if bun install -g @spec-kit/cli 2>/dev/null; then
+        echo -e "${GREEN}✅ spec-kit installed successfully via bun${NC}"
+
+        # Verify installation (use --help since --version isn't supported)
+        if command -v specify &> /dev/null; then
+            if specify --help >/dev/null 2>&1; then
+                echo -e "${BLUE}spec-kit CLI ready${NC}"
+
+                # Create symlink
+                SPECIFY_PATH=$(which specify)
+                if [ -n "$SPECIFY_PATH" ] && [ "$SPECIFY_PATH" != "$TOOLS_DIR/specify" ]; then
+                    ln -sf "$SPECIFY_PATH" "$TOOLS_DIR/specify" 2>/dev/null || true
+                fi
+                SPECKIT_INSTALLED=true
+            fi
+        fi
+    else
+        echo -e "${YELLOW}⚠️  bun installation failed${NC}"
+    fi
+fi
+
+# Check final installation status
+if [ "$SPECKIT_INSTALLED" != true ]; then
+    echo -e "${RED}❌ Failed to install spec-kit CLI${NC}"
+    echo -e "${YELLOW}Please install manually using one of these methods:${NC}"
+    echo -e "${BLUE}  - npm: npm install -g @spec-kit/cli${NC}"
+    echo -e "${BLUE}  - uvx: uvx --from git+https://github.com/github/spec-kit.git specify init <project>${NC}"
+    echo -e "${BLUE}  - bun: bun install -g @spec-kit/cli${NC}"
+fi
+
 # Create wrapper scripts for easy access
 echo -e "${BLUE}Creating wrapper scripts...${NC}"
 
@@ -342,9 +500,10 @@ export PATH="\$APERIM_TOOLS_DIR:\$PATH"
 alias claude='$TOOLS_DIR/claude'
 alias codex='$TOOLS_DIR/codex'
 alias opencode='$TOOLS_DIR/opencode'
+alias specify='$TOOLS_DIR/specify'
 
 echo "🤖 Aperim agent tools loaded"
-echo "Available tools: claude, codex, opencode"
+echo "Available tools: claude, codex, opencode, specify"
 echo "Tools directory: \$APERIM_TOOLS_DIR"
 EOF
 
@@ -388,7 +547,7 @@ echo -e "${BLUE}=== Installation Summary ===${NC}"
 TOOLS_INSTALLED=0
 TOOLS_TOTAL=0
 
-for tool in "claude" "codex" "opencode"; do
+for tool in "claude" "codex" "opencode" "specify"; do
     TOOLS_TOTAL=$((TOOLS_TOTAL + 1))
     if [ -f "$TOOLS_DIR/$tool" ]; then
         echo -e "${GREEN}✅ $tool${NC}"
