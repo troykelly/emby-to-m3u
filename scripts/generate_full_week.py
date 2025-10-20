@@ -12,6 +12,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 
+# Add project root to path for imports
+import sys
+project_root = Path(__file__).parent.parent.absolute()
+sys.path.insert(0, str(project_root))
+
+# Import after path is set
+from src.ai_playlist.config import get_station_identity_path
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -166,12 +174,9 @@ def main():
 
     args = parser.parse_args()
 
-    station_identity = Path(args.input)
+    # Use config module to resolve station identity path
+    station_identity = get_station_identity_path(args.input)
     output_dir = Path(args.output)
-
-    if not station_identity.exists():
-        logger.error(f"Station identity file not found: {station_identity}")
-        sys.exit(1)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 

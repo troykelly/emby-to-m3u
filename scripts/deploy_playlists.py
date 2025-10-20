@@ -22,7 +22,7 @@ from typing import List, Dict, Any
 
 # Import all required modules - works both as script and module
 try:
-    from src.ai_playlist.config import AIPlaylistConfig
+    from src.ai_playlist.config import AIPlaylistConfig, get_station_identity_path
     from src.ai_playlist.document_parser import DocumentParser
     from src.ai_playlist.batch_executor import BatchPlaylistGenerator
     from src.ai_playlist.workflow import save_playlist_file
@@ -32,7 +32,7 @@ try:
 except ModuleNotFoundError:
     # Running as script, add parent directory to path
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from src.ai_playlist.config import AIPlaylistConfig
+    from src.ai_playlist.config import AIPlaylistConfig, get_station_identity_path
     from src.ai_playlist.document_parser import DocumentParser
     from src.ai_playlist.batch_executor import BatchPlaylistGenerator
     from src.ai_playlist.workflow import save_playlist_file
@@ -147,15 +147,8 @@ async def complete_end_to_end() -> DeploymentMetrics:
         logger.info("="*80)
 
         parser = DocumentParser()
-        # Use relative path that works in both dev and container
-        station_identity_path = Path(__file__).parent.parent / "station-identity.md"
-
-        if not station_identity_path.exists():
-            error = f"Station identity file not found: {station_identity_path}"
-            logger.error(error)
-            metrics.errors.append(error)
-            return metrics
-
+        # Use config module to resolve station identity path
+        station_identity_path = get_station_identity_path()
         station_identity = parser.load_document(station_identity_path)
 
         # Get weekday programming structure
