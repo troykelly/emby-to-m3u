@@ -59,8 +59,9 @@ class TestAIPlaylistGeneration:
     @pytest.fixture
     async def station_identity(self) -> any:
         """Load station identity document."""
+        from src.ai_playlist.config import get_station_identity_path
         parser = DocumentParser()
-        doc = parser.load_document(Path("/workspaces/emby-to-m3u/station-identity.md"))
+        doc = parser.load_document(get_station_identity_path())
         return doc
 
     @pytest.fixture

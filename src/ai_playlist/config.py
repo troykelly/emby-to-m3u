@@ -135,3 +135,47 @@ class AIPlaylistConfig:
             f"total_cost_budget={self.total_cost_budget}"
             f")"
         )
+
+
+def get_station_identity_path(explicit_path: Optional[str] = None):
+    """
+    Get station identity file path with precedence handling.
+
+    Precedence:
+    1. explicit_path parameter (from CLI --input)
+    2. STATION_IDENTITY_PATH environment variable
+    3. Default: /app/station-identity.md (Docker) or ./station-identity.md (local)
+
+    Args:
+        explicit_path: Explicit path provided (e.g., from CLI argument)
+
+    Returns:
+        Path: Resolved absolute path to station-identity.md
+
+    Raises:
+        FileNotFoundError: If resolved path doesn't exist
+    """
+    from pathlib import Path
+    
+    # 1. Explicit path takes precedence
+    if explicit_path:
+        path = Path(explicit_path).resolve()
+    # 2. Check environment variable
+    elif env_path := os.getenv("STATION_IDENTITY_PATH"):
+        path = Path(env_path).resolve()
+    # 3. Use default based on environment
+    else:
+        # Detect Docker environment by checking for /app directory
+        if Path("/app").exists():
+            path = Path("/app/station-identity.md")
+        else:
+            path = Path("./station-identity.md").resolve()
+
+    # Validate file exists
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Station identity file not found: {path}\n"
+            f"Please ensure the file exists or set STATION_IDENTITY_PATH environment variable."
+        )
+
+    return path

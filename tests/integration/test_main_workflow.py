@@ -21,9 +21,10 @@ pytestmark = pytest.mark.skipif(
 async def test_main_workflow_end_to_end(tmp_path):
     """Test complete CLI workflow end-to-end."""
     from src.ai_playlist.main import run_automation
+    from src.ai_playlist.config import get_station_identity_path
 
     # Setup test paths
-    station_identity_path = Path("/workspaces/emby-to-m3u/station-identity.md")
+    station_identity_path = get_station_identity_path()
     output_dir = tmp_path / "playlists"
 
     # Run automation with dry-run mode (skip AzuraCast sync)
@@ -69,8 +70,9 @@ async def test_main_workflow_end_to_end(tmp_path):
 async def test_document_parsing_integration():
     """Test document parsing returns correct structure."""
     from src.ai_playlist.document_parser import DocumentParser
+    from src.ai_playlist.config import get_station_identity_path
 
-    station_identity_path = Path("/workspaces/emby-to-m3u/station-identity.md")
+    station_identity_path = get_station_identity_path()
 
     parser = DocumentParser()
     station_identity = parser.load_document(station_identity_path)
@@ -128,12 +130,12 @@ async def test_batch_generation_integration(tmp_path):
     """Test batch playlist generation with reduced track counts."""
     from src.ai_playlist.document_parser import DocumentParser
     from src.ai_playlist.batch_executor import BatchPlaylistGenerator
-    from src.ai_playlist.config import AIPlaylistConfig
+    from src.ai_playlist.config import AIPlaylistConfig, get_station_identity_path
     from src.subsonic.client import SubsonicClient
     from datetime import date
 
     # Parse station identity
-    station_identity_path = Path("/workspaces/emby-to-m3u/station-identity.md")
+    station_identity_path = get_station_identity_path()
     parser = DocumentParser()
     station_identity = parser.load_document(station_identity_path)
 

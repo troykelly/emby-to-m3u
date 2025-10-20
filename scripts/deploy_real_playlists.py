@@ -21,14 +21,14 @@ from decimal import Decimal
 # Add project root to path and change directory
 project_root = Path(__file__).parent.parent.absolute()
 os.chdir(str(project_root))  # Change to project root
-sys.path.insert(0, str(project_root / "src"))
+sys.path.insert(0, str(project_root))
 
 # Now import after path is set
-from ai_playlist.config import AIPlaylistConfig
-from ai_playlist.batch_executor import BatchPlaylistGenerator
-from ai_playlist.document_parser import DocumentParser
-from ai_playlist.workflow import save_playlist_file, sync_to_azuracast
-from subsonic.client import SubsonicClient
+from src.ai_playlist.config import AIPlaylistConfig, get_station_identity_path
+from src.ai_playlist.batch_executor import BatchPlaylistGenerator
+from src.ai_playlist.document_parser import DocumentParser
+from src.ai_playlist.workflow import save_playlist_file, sync_to_azuracast
+from src.subsonic.client import SubsonicClient
 
 # Configure logging
 logging.basicConfig(
@@ -64,7 +64,7 @@ async def test_single_playlist():
     # 3. Load station identity
     logger.info("Step 3: Loading station-identity.md...")
     parser = DocumentParser()
-    station_identity_path = project_root / "station-identity.md"
+    station_identity_path = get_station_identity_path()
     station_identity = parser.load_document(station_identity_path)
     logger.info(f"✓ Loaded station identity from: {station_identity.document_path}")
 
@@ -164,7 +164,7 @@ async def deploy_full_week():
     # 3. Load station identity
     logger.info("Step 3: Loading station-identity.md...")
     parser = DocumentParser()
-    station_identity_path = project_root / "station-identity.md"
+    station_identity_path = get_station_identity_path()
     station_identity = parser.load_document(station_identity_path)
     logger.info(f"✓ Loaded station identity")
 

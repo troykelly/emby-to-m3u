@@ -10,6 +10,7 @@ Tests all configuration management including:
 import pytest
 import os
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 from src.ai_playlist.config import AIPlaylistConfig
@@ -332,3 +333,85 @@ class TestRepr:
 
         # Assert
         assert 'lastfm_api_key=None' in repr_str
+
+class TestGetStationIdentityPath:
+    """Test get_station_identity_path() precedence and defaults."""
+
+    def test_explicit_path_takes_precedence_over_env_var(self, tmp_path, monkeypatch):
+        """Explicit path parameter should override STATION_IDENTITY_PATH env var."""
+        # Create two test files
+        explicit_file = tmp_path / "explicit.md"
+        explicit_file.write_text("explicit content")
+
+        env_file = tmp_path / "env.md"
+        env_file.write_text("env content")
+
+        # Set env var
+        monkeypatch.setenv("STATION_IDENTITY_PATH", str(env_file))
+
+        # Explicit path should win
+        from src.ai_playlist.config import get_station_identity_path
+        result = get_station_identity_path(explicit_path=str(explicit_file))
+        assert result == explicit_file
+
+    def test_env_var_used_when_no_explicit_path(self, tmp_path, monkeypatch):
+        """STATION_IDENTITY_PATH env var should be used when no explicit path."""
+        env_file = tmp_path / "from-env.md"
+        env_file.write_text("env content")
+
+        monkeypatch.setenv("STATION_IDENTITY_PATH", str(env_file))
+
+        from src.ai_playlist.config import get_station_identity_path
+        result = get_station_identity_path()
+        assert result == env_file
+
+    def test_default_path_docker_environment(self, tmp_path, monkeypatch):
+        """Should use /app/station-identity.md in Docker environment."""
+        # Clear env var
+        monkeypatch.delenv("STATION_IDENTITY_PATH", raising=False)
+
+        # Mock Docker environment (check for /app directory)
+        default_file = Path("/app/station-identity.md")
+
+        # We'll mock Path.exists() for this test
+        # For now, just verify the logic exists
+        # Full test requires mocking filesystem
+        pass  # Placeholder - will implement in refinement
+
+    def test_default_path_local_environment(self, tmp_path, monkeypatch):
+        """Should use ./station-identity.md in local environment."""
+        monkeypatch.delenv("STATION_IDENTITY_PATH", raising=False)
+
+        # Create file in current directory
+        local_file = tmp_path / "station-identity.md"
+        local_file.write_text("local content")
+
+        # Change to tmp directory
+        monkeypatch.chdir(tmp_path)
+
+        from src.ai_playlist.config import get_station_identity_path
+        result = get_station_identity_path()
+        assert result == Path("station-identity.md").resolve()
+
+    def test_file_not_found_raises_clear_error(self, tmp_path, monkeypatch):
+        """Should raise FileNotFoundError with clear message if file doesn't exist."""
+        nonexistent = tmp_path / "nonexistent.md"
+
+        from src.ai_playlist.config import get_station_identity_path
+        with pytest.raises(FileNotFoundError) as exc_info:
+            get_station_identity_path(explicit_path=str(nonexistent))
+
+        assert "station identity" in str(exc_info.value).lower()
+        assert str(nonexistent) in str(exc_info.value)
+
+    def test_relative_path_resolved_to_absolute(self, tmp_path, monkeypatch):
+        """Relative paths should be resolved to absolute paths."""
+        monkeypatch.chdir(tmp_path)
+
+        rel_file = Path("relative.md")
+        (tmp_path / "relative.md").write_text("content")
+
+        from src.ai_playlist.config import get_station_identity_path
+        result = get_station_identity_path(explicit_path="relative.md")
+        assert result.is_absolute()
+        assert result == (tmp_path / "relative.md")

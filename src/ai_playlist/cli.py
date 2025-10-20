@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Any
 
+from .config import get_station_identity_path
 from .main import run_automation
 from .exceptions import (
     ParseError,
@@ -42,13 +43,14 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Required arguments
+    # Optional arguments (--input now optional, uses env var or default)
     parser.add_argument(
         "--input",
         type=str,
-        required=True,
+        required=False,
         metavar="FILE",
-        help="Path to programming document (station-identity.md)",
+        help="Path to programming document (station-identity.md). "
+             "Defaults to STATION_IDENTITY_PATH env var or ./station-identity.md",
     )
 
     parser.add_argument(
@@ -100,13 +102,14 @@ def validate_arguments(args: argparse.Namespace) -> None:
     Raises:
         ValueError: If arguments are invalid
     """
-    # Validate input file exists
-    input_path = Path(args.input)
-    if not input_path.exists():
-        raise ValueError(f"Input file not found: {args.input}")
+    # Resolve input file path using config module
+    try:
+        input_path = get_station_identity_path(args.input)
+    except FileNotFoundError as e:
+        raise ValueError(str(e))
 
-    if not input_path.is_file():
-        raise ValueError(f"Input path is not a file: {args.input}")
+    # Store resolved path back in args for consistency
+    args.input = str(input_path)
 
     # Validate max cost
     if args.max_cost <= 0:
