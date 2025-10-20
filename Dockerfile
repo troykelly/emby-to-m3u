@@ -25,7 +25,7 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 # Copy application code, scripts, and station identity with proper ownership
 COPY --chown=m3u:m3u src /app/src
 COPY --chown=m3u:m3u scripts /app/scripts
-COPY --chown=m3u:m3u station-identity.md /app/station-identity.md
+COPY --chown=m3u:m3u station-identity.example.md /app/station-identity.md
 
 # Create output directories
 RUN mkdir -p /app/playlists /app/logs && chown -R m3u:m3u /app
