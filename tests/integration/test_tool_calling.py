@@ -52,8 +52,9 @@ class TestToolCallingWorkflow:
     @pytest.fixture
     async def station_identity(self):
         """Load station identity document."""
+        from src.ai_playlist.config import get_station_identity_path
         parser = DocumentParser()
-        return parser.load_document(Path("/workspaces/emby-to-m3u/station-identity.md"))
+        return parser.load_document(get_station_identity_path())
 
     @pytest.mark.asyncio
     async def test_llm_uses_tools_to_discover_tracks(

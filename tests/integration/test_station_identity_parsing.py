@@ -21,9 +21,11 @@ class TestStationIdentityParsing:
     @pytest.fixture
     def station_identity_path(self) -> Path:
         """Get path to live station-identity.md file."""
-        path = Path("/workspaces/emby-to-m3u/station-identity.md")
-        if not path.exists():
-            pytest.skip(f"Station identity file not found: {path}")
+        from src.ai_playlist.config import get_station_identity_path
+        try:
+            path = get_station_identity_path()
+        except FileNotFoundError as e:
+            pytest.skip(str(e))
         return path
 
     @pytest.fixture
