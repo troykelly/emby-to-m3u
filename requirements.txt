@@ -8,7 +8,7 @@ GitPython==3.1.50
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-idna==3.13
+idna==3.14
 Markdown==3.10.2
 mutagen==1.47.0
 pdfkit==1.0.0
@@ -17,7 +17,7 @@ pylast==7.0.2
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 pytz==2026.2
-requests==2.33.1
+requests==2.34.0
 schedule==1.2.2
 setuptools==82.0.1
 six==1.17.0
