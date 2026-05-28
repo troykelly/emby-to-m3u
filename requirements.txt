@@ -8,7 +8,7 @@ GitPython==3.1.50
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-idna==3.16
+idna==3.17
 Markdown==3.10.2
 mutagen==1.47.0
 pdfkit==1.0.0
