@@ -13,7 +13,7 @@ Markdown==3.10.2
 mutagen==1.48.1
 pdfkit==1.0.0
 pydub==0.25.1
-pylast==7.0.2
+pylast==7.1.0
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 pytz==2026.2
