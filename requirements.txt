@@ -2,7 +2,7 @@ anyio==4.14.1
 certifi==2026.6.17
 charset-normalizer==3.4.7
 colorlog==6.10.1
-croniter==6.2.2
+croniter==6.2.3
 gitdb==4.0.12
 GitPython==3.1.50
 h11==0.16.0
