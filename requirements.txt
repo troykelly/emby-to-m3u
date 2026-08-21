@@ -8,7 +8,7 @@ GitPython==3.1.59
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-idna==3.18
+idna==3.19
 Markdown==3.10.3
 mutagen==1.48.1
 pdfkit==1.0.0
@@ -30,7 +30,7 @@ pytest==9.1.1
 pytest-mock==3.15.1
 pytest-cov==7.1.0
 pytest-asyncio==1.4.0
-openai>=3.2.0
+openai>=3.3.0
 tiktoken
 aiohttp>=3.14.3
 PyYAML>=6.0.3
