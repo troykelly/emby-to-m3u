@@ -27,10 +27,10 @@ tqdm==4.70.1
 urllib3==2.8.0
 wheel==0.48.0
 pytest==9.1.1
-pytest-mock==3.16.0
+pytest-mock==3.17.0
 pytest-cov==7.1.0
 pytest-asyncio==1.4.0
-openai>=3.32.0
+openai>=3.34.0
 tiktoken
 aiohttp>=3.14.5
 PyYAML>=6.0.3
